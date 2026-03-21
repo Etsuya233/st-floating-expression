@@ -21,6 +21,8 @@ const DEFAULT_SETTINGS = {
     regexPattern: '\\[expression[：:](.+?)\\]',
     htmlTagName: 'expression',
     hideTag: false,
+    streamDetection: true,
+    streamDebounceMs: 300,
     fallbackExpression: '',
 
     // Display mode: 'window' | 'fullscreen' | 'custom'
@@ -66,6 +68,7 @@ const spriteCache = new Map();
 let currentExpression = null;
 let currentImageSrc = '';
 let isOpacityToggled = false;
+let streamDebounceTimer = null;
 
 // =============================================================
 //  Settings
@@ -114,6 +117,8 @@ function loadSettingsUI() {
     $('#fe_regex_pattern').val(s.regexPattern);
     $('#fe_html_tag_name').val(s.htmlTagName);
     $('#fe_fallback_expression').val(s.fallbackExpression);
+    $('#fe_stream_detection').prop('checked', s.streamDetection);
+    $('#fe_stream_debounce_ms').val(s.streamDebounceMs);
 
     // Display mode
     $('#fe_display_mode').val(s.displayMode);
@@ -206,6 +211,16 @@ function bindSettingsListeners() {
 
     $('#fe_fallback_expression').on('input', function () {
         getSettings().fallbackExpression = String($(this).val()).trim();
+        saveSettings();
+    });
+
+    $('#fe_stream_detection').on('change', function () {
+        getSettings().streamDetection = !!$(this).prop('checked');
+        saveSettings();
+    });
+
+    $('#fe_stream_debounce_ms').on('input', function () {
+        getSettings().streamDebounceMs = parseInt($(this).val()) || 300;
         saveSettings();
     });
 
@@ -863,6 +878,28 @@ function onMessageSwiped() {
     detectAndRenderFromLastMessage();
 }
 
+/**
+ * Debounced handler for streaming tokens.
+ * Reads the latest assistant message and processes it.
+ */
+function onStreamTokenReceived() {
+    if (!getSettings().enabled) return;
+
+    if (!getSettings().streamDetection) return;
+
+    clearTimeout(streamDebounceTimer);
+    streamDebounceTimer = setTimeout(() => {
+        const context = getContext();
+        if (!context.chat || !context.chat.length) return;
+
+        // During streaming, the last message is the one being generated
+        const lastMsg = context.chat[context.chat.length - 1];
+        if (!lastMsg || lastMsg.is_user || lastMsg.is_system) return;
+
+        processMessage(lastMsg.mes || '');
+    }, getSettings().streamDebounceMs);
+}
+
 function onChatChanged() {
     spriteCache.clear();
     currentExpression = null;
@@ -901,6 +938,7 @@ jQuery(async () => {
     eventSource.on(event_types.MESSAGE_UPDATED, onMessageUpdated);
     eventSource.on(event_types.MESSAGE_SWIPED, onMessageSwiped);
     eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
+    eventSource.on(event_types.STREAM_TOKEN_RECEIVED, onStreamTokenReceived);
     eventSource.on(event_types.CHARACTER_EDITED, () => {
         spriteCache.clear();
         detectAndRenderFromLastMessage();

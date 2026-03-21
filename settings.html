@@ -53,6 +53,17 @@
                 <input id="fe_fallback_expression" type="text" class="text_pole" placeholder="e.g. neutral" />
             </div>
 
+            <label class="checkbox_label" for="fe_stream_detection">
+                <input id="fe_stream_detection" type="checkbox" />
+                <span>Detect expression during streaming</span>
+            </label>
+
+            <div id="fe_stream_debounce_settings" class="fe-setting-group">
+                <label for="fe_stream_debounce_ms">Stream Debounce (ms)</label>
+                <small>Delay before processing during streaming. Higher = fewer updates, better performance.</small>
+                <input id="fe_stream_debounce_ms" type="number" class="text_pole" min="50" max="5000" step="50" value="300" />
+            </div>
+
             <div class="fe-setting-group">
                 <div id="fe_force_refresh" class="menu_button menu_button_icon">
                     <i class="fa-solid fa-arrows-rotate"></i>
