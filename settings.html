@@ -1,0 +1,177 @@
+<div class="floating-expression-settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>Floating Expression</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+
+        <div class="inline-drawer-content">
+            <!-- ═══ General ═══ -->
+            <label class="checkbox_label" for="fe_enabled">
+                <input id="fe_enabled" type="checkbox" />
+                <span>Enable Floating Expression</span>
+            </label>
+
+            <label class="checkbox_label" for="fe_hide_tag">
+                <input id="fe_hide_tag" type="checkbox" />
+                <span>Hide expression tag from displayed message</span>
+            </label>
+            <small style="opacity: 0.7; margin-bottom: 4px;">
+                Copy the regex below and create a Regex script manually to hide tags.
+            </small>
+            <div id="fe_copy_regex" class="menu_button menu_button_icon" style="margin: 4px 0;">
+                <i class="fa-solid fa-copy"></i>
+                <span>Copy Regex for Hiding Tags</span>
+            </div>
+
+            <hr />
+
+            <!-- ═══ Detection ═══ -->
+            <div class="fe-setting-group">
+                <label for="fe_detection_mode">Detection Mode</label>
+                <select id="fe_detection_mode" class="flex1 margin0">
+                    <option value="regex">Regex Pattern</option>
+                    <option value="html_tag">HTML Tag</option>
+                </select>
+            </div>
+
+            <div id="fe_regex_settings" class="fe-setting-group">
+                <label for="fe_regex_pattern">Regex Pattern</label>
+                <small>Use a capture group <tt>()</tt> to extract the expression label.</small>
+                <input id="fe_regex_pattern" type="text" class="text_pole" placeholder="\[expression[：:](.+?)\]" />
+            </div>
+
+            <div id="fe_html_tag_settings" class="fe-setting-group">
+                <label for="fe_html_tag_name">HTML Tag Name</label>
+                <small>Example: <tt>&lt;expression&gt;joy&lt;/expression&gt;</tt></small>
+                <input id="fe_html_tag_name" type="text" class="text_pole" placeholder="expression" />
+            </div>
+
+            <div class="fe-setting-group">
+                <label for="fe_fallback_expression">Fallback Expression</label>
+                <small>Used when detection fails or no match is found. Leave empty to hide.</small>
+                <input id="fe_fallback_expression" type="text" class="text_pole" placeholder="e.g. neutral" />
+            </div>
+
+            <div class="fe-setting-group">
+                <div id="fe_force_refresh" class="menu_button menu_button_icon">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                    <span>Force Refresh</span>
+                </div>
+            </div>
+
+            <hr />
+
+            <!-- ═══ Display Mode ═══ -->
+            <div class="fe-setting-group">
+                <label for="fe_display_mode">Display Mode</label>
+                <select id="fe_display_mode" class="flex1 margin0">
+                    <option value="window">Window</option>
+                    <option value="fullscreen">Fullscreen Background</option>
+                    <option value="custom">Custom HTML / CSS</option>
+                </select>
+            </div>
+
+            <!-- ─── Window Mode Settings ─── -->
+            <div id="fe_window_settings">
+                <div class="fe-setting-group">
+                    <label for="fe_window_size_preset">Window Size Preset</label>
+                    <select id="fe_window_size_preset" class="flex1 margin0">
+                        <option value="small">Small (150×150)</option>
+                        <option value="medium">Medium (300×300)</option>
+                        <option value="large">Large (500×500)</option>
+                        <option value="custom">Custom Size</option>
+                    </select>
+                </div>
+
+                <div id="fe_window_custom_size" class="fe-setting-group fe-inline-row">
+                    <div>
+                        <label for="fe_window_width">Width (px)</label>
+                        <input id="fe_window_width" type="number" class="text_pole" min="50" max="2000" value="200" />
+                    </div>
+                    <div>
+                        <label for="fe_window_height">Height (px)</label>
+                        <input id="fe_window_height" type="number" class="text_pole" min="50" max="2000" value="200" />
+                    </div>
+                </div>
+
+                <div class="fe-setting-group">
+                    <label for="fe_window_object_fit">Image Fit</label>
+                    <select id="fe_window_object_fit" class="flex1 margin0">
+                        <option value="contain">Contain (show full image)</option>
+                        <option value="cover">Cover (fill, may crop)</option>
+                        <option value="fill">Fill (stretch)</option>
+                        <option value="scale-down">Scale Down</option>
+                        <option value="none">None (original size)</option>
+                    </select>
+                </div>
+
+                <div class="fe-setting-group">
+                    <label for="fe_window_bg_color">Background Color</label>
+                    <small>CSS color value. Use <tt>transparent</tt> for no background.</small>
+                    <input id="fe_window_bg_color" type="text" class="text_pole" placeholder="rgba(30,30,30,0.6)" />
+                </div>
+
+                <div class="fe-setting-group fe-inline-row">
+                    <div>
+                        <label for="fe_window_opacity">Default Opacity</label>
+                        <input id="fe_window_opacity" type="number" class="text_pole" min="0" max="1" step="0.05" value="1" />
+                    </div>
+                    <div>
+                        <label for="fe_window_click_opacity">Click-Toggle Opacity</label>
+                        <input id="fe_window_click_opacity" type="number" class="text_pole" min="0" max="1" step="0.05" value="0.2" />
+                    </div>
+                </div>
+
+                <label class="checkbox_label" for="fe_window_click_toggle">
+                    <input id="fe_window_click_toggle" type="checkbox" />
+                    <span>Click to toggle opacity</span>
+                </label>
+
+                <div class="fe-setting-group">
+                    <label for="fe_window_z_index">Z-Index</label>
+                    <input id="fe_window_z_index" type="number" class="text_pole" min="-1" max="99999" value="9990" />
+                </div>
+            </div>
+
+            <!-- ─── Fullscreen Mode Settings ─── -->
+            <div id="fe_fullscreen_settings">
+                <div class="fe-setting-group">
+                    <label for="fe_fs_object_fit">Image Fit</label>
+                    <select id="fe_fs_object_fit" class="flex1 margin0">
+                        <option value="contain">Contain</option>
+                        <option value="cover">Cover (fill, may crop)</option>
+                        <option value="fill">Fill (stretch)</option>
+                        <option value="scale-down">Scale Down</option>
+                        <option value="none">None (original size)</option>
+                    </select>
+                </div>
+
+                <div class="fe-setting-group">
+                    <label for="fe_fs_opacity">Opacity</label>
+                    <input id="fe_fs_opacity" type="number" class="text_pole" min="0" max="1" step="0.05" value="0.15" />
+                </div>
+
+                <div class="fe-setting-group">
+                    <label for="fe_fs_z_index">Z-Index</label>
+                    <small>Set to <tt>0</tt> to render behind chat, or higher to overlay.</small>
+                    <input id="fe_fs_z_index" type="number" class="text_pole" min="-1" max="99999" value="0" />
+                </div>
+            </div>
+
+            <!-- ─── Custom Mode Settings ─── -->
+            <div id="fe_custom_settings">
+                <div class="fe-setting-group">
+                    <label for="fe_custom_html">Custom HTML Template</label>
+                    <small>Variables: <tt>{{imageSrc}}</tt>, <tt>{{label}}</tt></small>
+                    <textarea id="fe_custom_html" class="text_pole textarea_compact autoSetHeight" rows="4" placeholder='<div class="my-expr"><img src="{{imageSrc}}" alt="{{label}}" /></div>'></textarea>
+                </div>
+
+                <div class="fe-setting-group">
+                    <label for="fe_custom_css">Custom CSS</label>
+                    <textarea id="fe_custom_css" class="text_pole textarea_compact autoSetHeight" rows="4" placeholder='.my-expr { border: 3px solid gold; }'></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

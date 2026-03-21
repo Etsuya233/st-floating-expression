@@ -1,0 +1,142 @@
+/* ============================================================
+   Floating Expression — Main Styles
+   ============================================================ */
+
+/* ---------- Settings panel ---------- */
+.floating-expression-settings .fe-setting-group {
+    margin: 6px 0;
+}
+
+.floating-expression-settings .fe-setting-group label {
+    display: block;
+    margin-bottom: 2px;
+    font-weight: 600;
+}
+
+.floating-expression-settings .fe-setting-group small {
+    display: block;
+    margin-bottom: 4px;
+    opacity: 0.7;
+}
+
+.floating-expression-settings .fe-inline-row {
+    display: flex;
+    gap: 10px;
+}
+
+.floating-expression-settings .fe-inline-row > div {
+    flex: 1;
+}
+
+/* ---------- Floating container (shared) ---------- */
+#floating-expression-holder {
+    position: fixed;
+    pointer-events: auto;
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    overflow: hidden;
+    user-select: none;
+    transition: opacity 0.25s ease;
+}
+
+#floating-expression-holder.fe-hidden {
+    display: none !important;
+}
+
+#floating-expression-holder img.fe-sprite {
+    width: 100%;
+    height: 100%;
+    transition: opacity 0.25s ease;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+#floating-expression-holder img.fe-sprite[src=""] {
+    visibility: hidden;
+}
+
+/* Drag grabber — covers the full container for easy dragging */
+#floating-expression-holder .fe-drag-grabber {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    cursor: grab;
+    z-index: 1;
+}
+
+#floating-expression-holder .fe-drag-grabber:active {
+    cursor: grabbing;
+}
+
+/* ---------- Display Mode: Window ---------- */
+#floating-expression-holder.fe-window {
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+/* ---------- Display Mode: Fullscreen ---------- */
+#floating-expression-holder.fe-fullscreen {
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+    pointer-events: none;
+}
+
+#floating-expression-holder.fe-fullscreen .fe-drag-grabber {
+    display: none;
+}
+
+/* ---------- Display Mode: Custom ---------- */
+#floating-expression-holder.fe-custom {
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+}
+
+/* ---------- Crossfade animation ---------- */
+#floating-expression-holder .fe-sprite-leaving {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+    pointer-events: none;
+}
+
+/* ---------- Mobile responsive ----------
+   SillyTavern mobile breakpoint = 1000px
+   IMPORTANT: position:fixed + right/bottom breaks on
+   mobile due to ancestor CSS transforms. Use left/top only.
+   -------------------------------------------------------- */
+@media (max-width: 1000px) {
+    #floating-expression-holder.fe-window:not(.dragged) {
+        left: 50% !important;
+        top: calc(100vh - 230px) !important;
+        transform: translateX(-50%) !important;
+    }
+
+    #floating-expression-holder.dragged {
+        transform: none !important;
+    }
+
+    /* Fullscreen on mobile */
+    #floating-expression-holder.fe-fullscreen {
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        transform: none !important;
+    }
+}

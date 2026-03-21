@@ -1,0 +1,12 @@
+{
+    "display_name": "Floating Expression",
+    "loading_order": 10,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Etsuya",
+    "version": "1.0.0",
+    "homePage": "https://github.com/Etsuya233/st-floating-expression",
+    "description": "Detects expression labels in chat messages and renders matching sprite images in a configurable floating container."
+}
