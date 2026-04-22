@@ -438,15 +438,40 @@ async function fetchSpritesList(folderName) {
 }
 
 /**
+ * Resolve the sprite folder name, honoring Character Expressions overrides.
+ * @param {object|null} message
+ * @returns {string|null}
+ */
+function resolveSpriteFolderName(message = null) {
+    const context = getContext();
+
+    let avatarPath = '';
+    if (context.groupId && message) {
+        avatarPath = message.original_avatar
+            || context.characters.find(c => message.force_avatar && message.force_avatar.includes(encodeURIComponent(c.avatar)))?.avatar
+            || '';
+    } else {
+        avatarPath = getCharaFilename() || '';
+    }
+
+    const avatarFileName = avatarPath.replace(/\.[^/.]+$/, '');
+    if (!avatarFileName) return null;
+
+    const expressionOverride = extension_settings.expressionOverrides?.find(e => e.name === avatarFileName);
+    return expressionOverride?.path || avatarFileName;
+}
+
+/**
  * Resolve a sprite image path for the given expression label.
  * @param {string} label
+ * @param {object|null} message
  * @returns {Promise<string|null>}
  */
-async function resolveSprite(label) {
+async function resolveSprite(label, message = null) {
     const context = getContext();
     if (context.characterId === undefined && !context.groupId) return null;
 
-    const folderName = getCharaFilename();
+    const folderName = resolveSpriteFolderName(message);
     if (!folderName) return null;
 
     const sprites = await fetchSpritesList(folderName);
@@ -790,8 +815,9 @@ function renderCurrentExpression() {
 /**
  * Core pipeline: detect expression → resolve sprite → render.
  * @param {string} text Message text
+ * @param {object|null} message
  */
-async function processMessage(text) {
+async function processMessage(text, message = null) {
     const s = getSettings();
     if (!s.enabled) return;
 
@@ -809,11 +835,11 @@ async function processMessage(text) {
         return;
     }
 
-    const imageSrc = await resolveSprite(label);
+    const imageSrc = await resolveSprite(label, message);
     if (!imageSrc) {
         // Try fallback if detected label didn't match
         if (label !== s.fallbackExpression && s.fallbackExpression) {
-            const fallbackSrc = await resolveSprite(s.fallbackExpression.trim().toLowerCase());
+            const fallbackSrc = await resolveSprite(s.fallbackExpression.trim().toLowerCase(), message);
             if (fallbackSrc) {
                 currentExpression = s.fallbackExpression;
                 ensureHolder();
@@ -849,7 +875,7 @@ function detectAndRenderFromLastMessage() {
         return;
     }
 
-    processMessage(lastMsg.mes || '');
+    processMessage(lastMsg.mes || '', lastMsg);
 }
 
 
@@ -866,7 +892,7 @@ function onMessageReceived(messageId) {
 
     if (!message || message.is_user || message.is_system) return;
 
-    processMessage(message.mes || '');
+    processMessage(message.mes || '', message);
 }
 
 function onMessageUpdated(messageId) {
@@ -896,7 +922,7 @@ function onStreamTokenReceived() {
         const lastMsg = context.chat[context.chat.length - 1];
         if (!lastMsg || lastMsg.is_user || lastMsg.is_system) return;
 
-        processMessage(lastMsg.mes || '');
+        processMessage(lastMsg.mes || '', lastMsg);
     }, getSettings().streamDebounceMs);
 }
 
