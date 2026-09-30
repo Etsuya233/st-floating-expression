@@ -356,7 +356,7 @@ function detectExpression(text) {
  */
 function detectByRegex(text, pattern) {
     try {
-        const regex = new RegExp(pattern, 'i');
+        const regex = new RegExp(pattern, 'is');
         const match = regex.exec(text);
         if (match && match[1]) {
             return match[1].trim().toLowerCase();
@@ -375,7 +375,7 @@ function detectByRegex(text, pattern) {
 function detectByHtmlTag(text, tagName) {
     try {
         const escapedTag = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(`<${escapedTag}[^>]*>(.+?)</${escapedTag}>`, 'i');
+        const regex = new RegExp(`<${escapedTag}[^>]*>\\s*(.+?)\\s*</${escapedTag}>`, 'is');
         const match = regex.exec(text);
         if (match && match[1]) {
             return match[1].trim().toLowerCase();
@@ -402,7 +402,7 @@ function buildHideTagRegex() {
         return s.regexPattern;
     } else {
         const escaped = s.htmlTagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        return `<${escaped}[^>]*>.+?<\\/${escaped}>`;
+        return `<${escaped}[^>]*>[\\s\\S]+?<\\/${escaped}>`;
     }
 }
 
