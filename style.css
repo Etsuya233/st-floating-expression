@@ -28,6 +28,29 @@
     flex: 1;
 }
 
+.floating-expression-settings .fe-range-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.floating-expression-settings .fe-range-header output {
+    font-variant-numeric: tabular-nums;
+    font-weight: 400;
+    opacity: 0.8;
+}
+
+.floating-expression-settings input[type="range"] {
+    width: 100%;
+    margin: 2px 0 0;
+}
+
+.floating-expression-settings #fe_fs_adjust_toggle.fe-active {
+    border-color: var(--SmartThemeQuoteColor, #e0b64f);
+    color: var(--SmartThemeQuoteColor, #e0b64f);
+}
+
 /* ---------- Floating container (shared) ---------- */
 #floating-expression-holder {
     position: fixed;
@@ -94,6 +117,114 @@
 
 #floating-expression-holder.fe-fullscreen .fe-drag-grabber {
     display: none;
+}
+
+/* ---------- Fullscreen on-screen transform editor ---------- */
+/* z-index 200 keeps the frame above the chat (z-index 30) and below
+   SillyTavern's nav panels (z-index 3000+), so the settings panel
+   underneath stays clickable. */
+#fe-adjust-frame {
+    position: fixed;
+    box-sizing: border-box;
+    border: 2px dashed rgba(224, 182, 79, 0.9);
+    pointer-events: auto;
+    cursor: move;
+    touch-action: none;
+    user-select: none;
+    z-index: 200;
+}
+
+#fe-adjust-frame .fe-adjust-handle {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    box-sizing: border-box;
+    background: rgba(224, 182, 79, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.6);
+    border-radius: 3px;
+}
+
+#fe-adjust-frame .fe-adjust-handle[data-handle="nw"] {
+    left: -8px;
+    top: -8px;
+    cursor: nwse-resize;
+}
+
+#fe-adjust-frame .fe-adjust-handle[data-handle="ne"] {
+    right: -8px;
+    top: -8px;
+    cursor: nesw-resize;
+}
+
+#fe-adjust-frame .fe-adjust-handle[data-handle="sw"] {
+    left: -8px;
+    bottom: -8px;
+    cursor: nesw-resize;
+}
+
+#fe-adjust-frame .fe-adjust-handle[data-handle="se"] {
+    right: -8px;
+    bottom: -8px;
+    cursor: nwse-resize;
+}
+
+#fe-adjust-frame .fe-adjust-rotate {
+    left: 50%;
+    top: -38px;
+    width: 18px;
+    height: 18px;
+    margin-left: -9px;
+    border-radius: 50%;
+    cursor: grab;
+}
+
+#fe-adjust-frame .fe-adjust-rotate:active {
+    cursor: grabbing;
+}
+
+/* Editor toolbar. Pinned and stacked above the sprite, the editor frame and
+   every SillyTavern panel, so it stays clickable while the sprite covers the
+   settings panel. */
+#fe-adjust-toolbar {
+    position: fixed;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(20, 20, 20, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+    touch-action: none;
+    user-select: none;
+    z-index: 2147483000;
+}
+
+#fe-adjust-toolbar .fe-adjust-action {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #f5f5f5;
+    font-size: 0.9em;
+    cursor: pointer;
+}
+
+#fe-adjust-toolbar .fe-adjust-action:hover {
+    background: rgba(255, 255, 255, 0.24);
+}
+
+#fe-adjust-toolbar .fe-adjust-hint {
+    margin-left: 2px;
+    color: #f0f0f0;
+    font-size: 0.8em;
+    opacity: 0.65;
 }
 
 /* ---------- Display Mode: Custom ---------- */

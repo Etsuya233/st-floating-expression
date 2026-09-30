@@ -155,7 +155,63 @@
                         <option value="fill">Fill (stretch)</option>
                         <option value="scale-down">Scale Down</option>
                         <option value="none">None (original size)</option>
+                        <option value="manual">Manual (size / position / rotation)</option>
                     </select>
+                </div>
+
+                <!-- ─── Manual Transform ─── -->
+                <div id="fe_fs_manual_settings">
+                    <small style="opacity: 0.7; display: block; margin-bottom: 4px;">
+                        Starts from the full image (Contain), then applies your adjustments.
+                    </small>
+
+                    <div class="fe-setting-group">
+                        <label class="fe-range-header" for="fe_fs_scale">
+                            <span>Scale</span>
+                            <output id="fe_fs_scale_value">1.00×</output>
+                        </label>
+                        <input id="fe_fs_scale" type="range" min="0.1" max="3" step="0.01" value="1" />
+                    </div>
+
+                    <div class="fe-setting-group fe-inline-row">
+                        <div>
+                            <label class="fe-range-header" for="fe_fs_offset_x">
+                                <span>Offset X</span>
+                                <output id="fe_fs_offset_x_value">0vw</output>
+                            </label>
+                            <input id="fe_fs_offset_x" type="range" min="-100" max="100" step="1" value="0" />
+                        </div>
+                        <div>
+                            <label class="fe-range-header" for="fe_fs_offset_y">
+                                <span>Offset Y</span>
+                                <output id="fe_fs_offset_y_value">0vh</output>
+                            </label>
+                            <input id="fe_fs_offset_y" type="range" min="-100" max="100" step="1" value="0" />
+                        </div>
+                    </div>
+
+                    <div class="fe-setting-group">
+                        <label class="fe-range-header" for="fe_fs_rotation">
+                            <span>Rotation</span>
+                            <output id="fe_fs_rotation_value">0°</output>
+                        </label>
+                        <input id="fe_fs_rotation" type="range" min="-180" max="180" step="1" value="0" />
+                    </div>
+
+                    <div class="fe-setting-group fe-inline-row">
+                        <div>
+                            <div id="fe_fs_adjust_toggle" class="menu_button menu_button_icon" style="width: 100%;">
+                                <i class="fa-solid fa-arrows-up-down-left-right"></i>
+                                <span>Adjust on screen</span>
+                            </div>
+                        </div>
+                        <div>
+                            <div id="fe_fs_transform_reset" class="menu_button menu_button_icon" style="width: 100%;">
+                                <i class="fa-solid fa-rotate-left"></i>
+                                <span>Reset</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="fe-setting-group">

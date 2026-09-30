@@ -46,6 +46,14 @@ const DEFAULT_SETTINGS = {
         objectFit: 'cover',
         opacity: 0.15,
         zIndex: 0,
+        // Only applied while objectFit is 'manual'. Offsets are percentages
+        // of the viewport, rendered as vw/vh units.
+        transform: {
+            scale: 1,
+            x: 0,
+            y: 0,
+            rotation: 0,
+        },
     },
 
     // Custom mode
@@ -61,6 +69,24 @@ const WINDOW_PRESETS = {
 
 const DISPLAY_MODES = ['window', 'fullscreen', 'custom'];
 
+// Manual transform limits — shared by the sliders and the on-screen editor.
+const TRANSFORM_LIMITS = {
+    scale: { min: 0.1, max: 3 },
+    x: { min: -100, max: 100 },
+    y: { min: -100, max: 100 },
+    rotation: { min: -180, max: 180 },
+};
+
+// Z-index used while the on-screen editor is open. Must sit above the chat
+// (#chat is z-index 30, and being a stacking context it caps everything inside)
+// but below SillyTavern's nav panels (z-index 3000+), so the settings panel
+// stays clickable underneath the sprite. The editor frame uses the next step
+// up from style.css.
+const ADJUST_SPRITE_Z_INDEX = 100;
+
+const ADJUST_FRAME_ID = 'fe-adjust-frame';
+const ADJUST_TOOLBAR_ID = 'fe-adjust-toolbar';
+const ADJUST_HANDLES = ['nw', 'ne', 'sw', 'se'];
 // ── State ────────────────────────────────────────────────────
 /** @type {Map<string, {label: string, path: string}[]>} */
 const spriteCache = new Map();
@@ -69,6 +95,12 @@ let currentExpression = null;
 let currentImageSrc = '';
 let isOpacityToggled = false;
 let streamDebounceTimer = null;
+
+/** Active pointer drag on the on-screen editor, or null when idle. */
+let adjustState = null;
+
+/** Nav drawers hidden for the duration of an adjust session. */
+let hiddenNavPanels = [];
 
 // =============================================================
 //  Settings
@@ -79,27 +111,26 @@ function getSettings() {
     return extension_settings[EXTENSION_NAME];
 }
 
+/** Recursively fill in missing keys from defaults. Existing values win. */
+function mergeDefaults(target, defaults) {
+    for (const [key, value] of Object.entries(defaults)) {
+        const isObject = typeof value === 'object' && value !== null && !Array.isArray(value);
+        if (isObject) {
+            if (typeof target[key] !== 'object' || target[key] === null) {
+                target[key] = {};
+            }
+            mergeDefaults(target[key], value);
+        } else if (target[key] === undefined) {
+            target[key] = value;
+        }
+    }
+}
+
 function initSettings() {
     if (!extension_settings[EXTENSION_NAME]) {
         extension_settings[EXTENSION_NAME] = {};
     }
-    const s = extension_settings[EXTENSION_NAME];
-
-    // Deep merge defaults
-    for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
-        if (s[key] === undefined) {
-            s[key] = typeof value === 'object' && value !== null && !Array.isArray(value)
-                ? { ...value }
-                : value;
-        } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-            // Merge nested objects (window, fullscreen)
-            for (const [k2, v2] of Object.entries(value)) {
-                if (s[key][k2] === undefined) {
-                    s[key][k2] = v2;
-                }
-            }
-        }
-    }
+    mergeDefaults(extension_settings[EXTENSION_NAME], DEFAULT_SETTINGS);
 }
 
 function saveSettings() {
@@ -138,6 +169,7 @@ function loadSettingsUI() {
     $('#fe_fs_object_fit').val(s.fullscreen.objectFit);
     $('#fe_fs_opacity').val(s.fullscreen.opacity);
     $('#fe_fs_z_index').val(s.fullscreen.zIndex);
+    syncTransformControls();
 
     // Custom
     $('#fe_custom_html').val(s.customHtml);
@@ -147,6 +179,7 @@ function loadSettingsUI() {
     toggleDetectionModeUI(s.detectionMode);
     toggleDisplayModeUI(s.displayMode);
     toggleWindowCustomSize(s.window.sizePreset);
+    toggleFsManualUI(s.fullscreen.objectFit);
 }
 
 function toggleDetectionModeUI(mode) {
@@ -162,6 +195,10 @@ function toggleDisplayModeUI(mode) {
 
 function toggleWindowCustomSize(preset) {
     $('#fe_window_custom_size').toggle(preset === 'custom');
+}
+
+function toggleFsManualUI(fit) {
+    $('#fe_fs_manual_settings').toggle(fit === 'manual');
 }
 
 function bindSettingsListeners() {
@@ -298,7 +335,12 @@ function bindSettingsListeners() {
 
     // ── Fullscreen settings ──
     $('#fe_fs_object_fit').on('change', function () {
-        getSettings().fullscreen.objectFit = String($(this).val());
+        const fit = String($(this).val());
+        getSettings().fullscreen.objectFit = fit;
+        toggleFsManualUI(fit);
+        if (fit !== 'manual') {
+            stopAdjusting();
+        }
         applyFullscreenStyles();
         saveSettings();
     });
@@ -313,6 +355,32 @@ function bindSettingsListeners() {
         getSettings().fullscreen.zIndex = parseInt($(this).val(), 10) || 0;
         applyFullscreenStyles();
         saveSettings();
+    });
+
+    // ── Manual transform (fullscreen) ──
+    for (const [selector, key] of [
+        ['#fe_fs_scale', 'scale'],
+        ['#fe_fs_offset_x', 'x'],
+        ['#fe_fs_offset_y', 'y'],
+        ['#fe_fs_rotation', 'rotation'],
+    ]) {
+        $(selector).on('input', function () {
+            getSettings().fullscreen.transform[key] = parseFloat($(this).val());
+            applyFullscreenStyles();
+            updateAdjustFrame();
+            updateTransformLabels();
+            saveSettings();
+        });
+    }
+
+    $('#fe_fs_transform_reset').on('click', resetTransform);
+
+    $('#fe_fs_adjust_toggle').on('click', function () {
+        if ($(`#${ADJUST_FRAME_ID}`).length) {
+            stopAdjusting();
+        } else {
+            startAdjusting();
+        }
     });
 
     // ── Custom settings ──
@@ -504,6 +572,7 @@ function ensureHolder() {
     `);
 
     $('body').append(holder);
+    holder.find('img.fe-sprite').on('load', updateAdjustFrame);
     initDrag(holder);
     initClickToggle(holder);
     applyDisplayMode();
@@ -541,7 +610,7 @@ function applyDisplayMode() {
         zIndex: '',
         background: '',
     });
-    holder.find('img.fe-sprite').css('object-fit', '');
+    holder.find('img.fe-sprite').css({ 'object-fit': '', transform: '' });
 
     // Apply mode-specific styles
     switch (s.displayMode) {
@@ -554,6 +623,10 @@ function applyDisplayMode() {
         case 'custom':
             applyCustomCSS();
             break;
+    }
+
+    if (s.displayMode !== 'fullscreen') {
+        stopAdjusting();
     }
 
     isOpacityToggled = false;
@@ -604,13 +677,24 @@ function applyFullscreenStyles() {
     if (!holder.length) return;
 
     const fs = getSettings().fullscreen;
+    const manual = fs.objectFit === 'manual';
+    const adjusting = $(`#${ADJUST_FRAME_ID}`).length > 0;
 
     holder.css({
         opacity: fs.opacity,
-        zIndex: fs.zIndex,
+        zIndex: adjusting ? ADJUST_SPRITE_Z_INDEX : fs.zIndex,
     });
 
-    holder.find('img.fe-sprite').css('object-fit', fs.objectFit);
+    // Manual fit starts from a full-image (contain) base and then applies the
+    // user transform on top, so the editor can compute the frame from that box.
+    holder.find('img.fe-sprite')
+        .css('object-fit', manual ? 'contain' : fs.objectFit)
+        .css('transform', manual ? buildTransform(fs.transform) : '');
+}
+
+/** @param {{scale: number, x: number, y: number, rotation: number}} t */
+function buildTransform(t) {
+    return `translate(${t.x}vw, ${t.y}vh) rotate(${t.rotation}deg) scale(${t.scale})`;
 }
 
 /** Set a sensible default position for windowed modes */
@@ -809,6 +893,259 @@ function renderCurrentExpression() {
 }
 
 // =============================================================
+//  Fullscreen Manual Transform — On-Screen Editor
+// =============================================================
+
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+/** Wrap a rotation into (-180, 180]. */
+function normalizeAngle(deg) {
+    let a = deg % 360;
+    if (a > 180) a -= 360;
+    if (a <= -180) a += 360;
+    return a;
+}
+
+/**
+ * The box the sprite occupies before the transform, i.e. the "contain" box of
+ * the viewport-sized <img>.
+ * @param {HTMLImageElement} img
+ * @returns {{width: number, height: number}|null}
+ */
+function getContainBox(img) {
+    const nw = img.naturalWidth;
+    const nh = img.naturalHeight;
+    if (!nw || !nh) return null;
+
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    if (nw / nh > vw / vh) {
+        return { width: vw, height: vw * nh / nw };
+    }
+    return { width: vh * nw / nh, height: vh };
+}
+
+/** Center of the transformed sprite, in viewport pixels. */
+function getTransformCenter(t) {
+    return {
+        x: window.innerWidth * (0.5 + t.x / 100),
+        y: window.innerHeight * (0.5 + t.y / 100),
+    };
+}
+
+/** Push the saved transform values into the panel controls. */
+function syncTransformControls() {
+    const t = getSettings().fullscreen.transform;
+    $('#fe_fs_scale').val(t.scale);
+    $('#fe_fs_offset_x').val(t.x);
+    $('#fe_fs_offset_y').val(t.y);
+    $('#fe_fs_rotation').val(t.rotation);
+    updateTransformLabels();
+}
+
+function updateTransformLabels() {
+    const t = getSettings().fullscreen.transform;
+    $('#fe_fs_scale_value').text(`${t.scale.toFixed(2)}×`);
+    $('#fe_fs_offset_x_value').text(`${Math.round(t.x)}vw`);
+    $('#fe_fs_offset_y_value').text(`${Math.round(t.y)}vh`);
+    $('#fe_fs_rotation_value').text(`${Math.round(t.rotation)}°`);
+}
+
+function startAdjusting() {
+    if ($(`#${ADJUST_FRAME_ID}`).length) return;
+
+    const img = $('#floating-expression-holder img.fe-sprite')[0];
+    if (!img || !getContainBox(img)) {
+        toastr.warning('No sprite loaded yet. Send a message containing an expression first.');
+        return;
+    }
+
+    const frame = $(`<div id="${ADJUST_FRAME_ID}"></div>`);
+    for (const corner of ADJUST_HANDLES) {
+        frame.append(`<span class="fe-adjust-handle" data-handle="${corner}"></span>`);
+    }
+    frame.append('<span class="fe-adjust-handle fe-adjust-rotate" data-handle="rotate"></span>');
+    $('body').append(frame);
+    bindAdjustFrame(frame);
+
+    // Own toolbar, pinned above everything: the settings panel can end up
+    // underneath the sprite while adjusting, which would hide its buttons.
+    const toolbar = $(`
+        <div id="${ADJUST_TOOLBAR_ID}">
+            <div class="fe-adjust-action fe-adjust-done"><i class="fa-solid fa-check"></i><span>Done</span></div>
+            <div class="fe-adjust-action fe-adjust-reset"><i class="fa-solid fa-rotate-left"></i><span>Reset</span></div>
+            <span class="fe-adjust-hint">Esc to finish</span>
+        </div>
+    `);
+    toolbar.find('.fe-adjust-done').on('click', stopAdjusting);
+    toolbar.find('.fe-adjust-reset').on('click', resetTransform);
+    $('body').append(toolbar);
+
+    applyFullscreenStyles();   // raise the sprite above the chat while adjusting
+    updateAdjustFrame();
+    hideNavPanels();
+
+    $('#fe_fs_adjust_toggle').addClass('fe-active');
+    $('#fe_fs_adjust_toggle span').text('Done');
+}
+
+function stopAdjusting() {
+    const frame = $(`#${ADJUST_FRAME_ID}`);
+    if (!frame.length) return;
+
+    frame.remove();
+    $(`#${ADJUST_TOOLBAR_ID}`).remove();
+    adjustState = null;
+    restoreNavPanels();
+
+    // Restore the configured z-index. Other display modes style themselves in
+    // applyDisplayMode(), which is where this gets called from on a mode switch.
+    if (getSettings().displayMode === 'fullscreen') {
+        applyFullscreenStyles();
+    }
+
+    $('#fe_fs_adjust_toggle').removeClass('fe-active');
+    $('#fe_fs_adjust_toggle span').text('Adjust on screen');
+}
+
+/** Put the transform back to its identity values. */
+function resetTransform() {
+    Object.assign(getSettings().fullscreen.transform, { scale: 1, x: 0, y: 0, rotation: 0 });
+    applyFullscreenStyles();
+    updateAdjustFrame();
+    syncTransformControls();
+    saveSettings();
+}
+
+/**
+ * SillyTavern's nav panels are stacked above the sprite, so an open Extensions
+ * panel covers the very thing being aligned. Hide whatever is open for the
+ * duration of the session.
+ *
+ * The panels also get marked as pinned while hidden: SillyTavern autocloses
+ * non-pinned drawers on any click that lands outside them, which would let the
+ * canvas clicks drop the panel for good instead of restoring it on exit.
+ */
+function hideNavPanels() {
+    hiddenNavPanels = $('.drawer-content.openDrawer').toArray().map(panel => ({
+        panel,
+        display: panel.style.display,
+        pinned: panel.classList.contains('pinnedOpen'),
+    }));
+
+    for (const { panel } of hiddenNavPanels) {
+        panel.classList.add('pinnedOpen');
+        panel.style.display = 'none';
+    }
+}
+
+function restoreNavPanels() {
+    for (const { panel, display, pinned } of hiddenNavPanels) {
+        panel.style.display = display;
+        if (!pinned) {
+            panel.classList.remove('pinnedOpen');
+        }
+    }
+    hiddenNavPanels = [];
+}
+
+/**
+ * Keep the editor frame in sync with the rendered sprite. The frame bakes the
+ * scale into its own size, so its children (the handles) keep a constant
+ * on-screen size.
+ */
+function updateAdjustFrame() {
+    const frame = document.getElementById(ADJUST_FRAME_ID);
+    if (!frame) return;
+
+    const img = document.querySelector('#floating-expression-holder img.fe-sprite');
+    const box = img && getContainBox(img);
+    if (!box) {
+        stopAdjusting();
+        return;
+    }
+
+    const t = getSettings().fullscreen.transform;
+    const width = box.width * t.scale;
+    const height = box.height * t.scale;
+
+    frame.style.width = `${width}px`;
+    frame.style.height = `${height}px`;
+    frame.style.left = `${(window.innerWidth - width) / 2}px`;
+    frame.style.top = `${(window.innerHeight - height) / 2}px`;
+    frame.style.transform = `translate(${t.x}vw, ${t.y}vh) rotate(${t.rotation}deg)`;
+}
+
+function bindAdjustFrame(frame) {
+    frame.on('pointerdown', function (e) {
+        const handle = $(e.target).data('handle');
+        const mode = handle === 'rotate' ? 'rotate' : handle ? 'scale' : 'move';
+
+        const t = getSettings().fullscreen.transform;
+        const center = getTransformCenter(t);
+        const dist = Math.hypot(e.clientX - center.x, e.clientY - center.y);
+        if (mode === 'scale' && dist < 1) return;
+
+        adjustState = {
+            mode,
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            startDist: dist,
+            startAngle: Math.atan2(e.clientY - center.y, e.clientX - center.x) * 180 / Math.PI,
+            startTransform: { ...t },
+            center,
+        };
+
+        e.target.setPointerCapture?.(e.pointerId);
+        e.preventDefault();
+    });
+
+    frame.on('pointermove', function (e) {
+        if (!adjustState || e.pointerId !== adjustState.pointerId) return;
+        applyAdjustDrag(e);
+        e.preventDefault();
+    });
+
+    frame.on('pointerup pointercancel', function (e) {
+        if (!adjustState || e.pointerId !== adjustState.pointerId) return;
+        adjustState = null;
+        e.target.releasePointerCapture?.(e.pointerId);
+    });
+}
+
+/**
+ * Translate a pointer position into scale / offset / rotation. Scale and
+ * rotation only depend on the distance and angle from the frame center, which
+ * the rotation itself does not move.
+ */
+function applyAdjustDrag(e) {
+    const t = getSettings().fullscreen.transform;
+    const start = adjustState.startTransform;
+
+    if (adjustState.mode === 'move') {
+        t.x = clamp(start.x + (e.clientX - adjustState.startX) / window.innerWidth * 100,
+            TRANSFORM_LIMITS.x.min, TRANSFORM_LIMITS.x.max);
+        t.y = clamp(start.y + (e.clientY - adjustState.startY) / window.innerHeight * 100,
+            TRANSFORM_LIMITS.y.min, TRANSFORM_LIMITS.y.max);
+    } else if (adjustState.mode === 'scale') {
+        const dist = Math.hypot(e.clientX - adjustState.center.x, e.clientY - adjustState.center.y);
+        t.scale = clamp(start.scale * dist / adjustState.startDist,
+            TRANSFORM_LIMITS.scale.min, TRANSFORM_LIMITS.scale.max);
+    } else {
+        const angle = Math.atan2(e.clientY - adjustState.center.y, e.clientX - adjustState.center.x) * 180 / Math.PI;
+        t.rotation = normalizeAngle(start.rotation + angle - adjustState.startAngle);
+    }
+
+    applyFullscreenStyles();
+    updateAdjustFrame();
+    syncTransformControls();
+    saveSettings();
+}
+
+// =============================================================
 //  Message Processing
 // =============================================================
 
@@ -971,7 +1308,17 @@ jQuery(async () => {
     });
 
     // 6. Resize handler
-    window.addEventListener('resize', () => { applyDefaultPosition(); });
+    window.addEventListener('resize', () => {
+        applyDefaultPosition();
+        updateAdjustFrame();
+    });
+
+    // 7. Leave the on-screen editor with Escape
+    $(document).on('keydown', function (e) {
+        if (e.key === 'Escape') {
+            stopAdjusting();
+        }
+    });
 
     // 8. Process existing chat
     detectAndRenderFromLastMessage();
