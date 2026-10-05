@@ -402,6 +402,68 @@ function bindSettingsListeners() {
 // =============================================================
 
 /**
+ * Longest label accepted by the strict pass. Real labels are short
+ * ("joy", "smile_sharp"), so anything longer is prose — a sign that
+ * the match started inside reasoning text and ran on into the answer.
+ */
+const MAX_LABEL_LENGTH = 64;
+
+/**
+ * Pick the best expression candidate out of all matches.
+ *
+ * Ranked by, highest priority first:
+ *   1. strict match beats permissive — a strict match cannot span
+ *      lines or contain markup, so it cannot straddle two tags
+ *   2. later in the text wins — reasoning comes first, the real
+ *      answer comes last
+ *   3. shorter content wins — a cross-spanning match drags body prose
+ *      into the label, which never resolves to a sprite
+ * @param {{label:string, index:number, length:number, strict:boolean}[]} candidates
+ * @returns {string|null}
+ */
+function pickBestCandidate(candidates) {
+    if (!candidates.length) return null;
+
+    return candidates.reduce((best, c) => {
+        if (best.strict !== c.strict) return best.strict ? best : c;
+        if (best.index !== c.index) return best.index > c.index ? best : c;
+        return best.length <= c.length ? best : c;
+    }).label;
+}
+
+/**
+ * Collect every `<tag>…</tag>` match in the text, strict first.
+ * @param {string} text
+ * @param {string} tagName
+ * @returns {{label:string, index:number, length:number, strict:boolean}[]}
+ */
+function collectHtmlTagCandidates(text, tagName) {
+    const escapedTag = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // Strict: single-line, tag-free content. Surrounding newlines are
+    // still fine because the whitespace sits outside the capture, so
+    // `<expression>\nhappy\n</expression>` matches. A lone opening tag
+    // mentioned in reasoning ("按照要求生成<expression>标签") cannot match
+    // here, because the closing tag in the real answer is on a later line.
+    const strict = new RegExp(`<${escapedTag}[^>]*>\\s*([^\\n\\r<>]{1,${MAX_LABEL_LENGTH}}?)\\s*</${escapedTag}>`, 'gi');
+
+    // Permissive: the old dotAll behaviour, kept as a safety net for
+    // labels containing markup. Strict candidates always outrank these.
+    const permissive = new RegExp(`<${escapedTag}[^>]*>\\s*(.+?)\\s*</${escapedTag}>`, 'gis');
+
+    return [strict, permissive].flatMap((regex, i) =>
+        [...text.matchAll(regex)]
+            .map(m => ({
+                label: (m[1] || '').trim().toLowerCase(),
+                index: m.index ?? 0,
+                length: (m[1] || '').trim().length,
+                strict: i === 0,
+            }))
+            .filter(c => c.label)
+    );
+}
+
+/**
  * Detect expression label from message text.
  * @param {string} text  Raw message text (may contain HTML)
  * @returns {string|null} The extracted expression label, or null
@@ -424,11 +486,18 @@ function detectExpression(text) {
  */
 function detectByRegex(text, pattern) {
     try {
-        const regex = new RegExp(pattern, 'is');
-        const match = regex.exec(text);
-        if (match && match[1]) {
-            return match[1].trim().toLowerCase();
-        }
+        const regex = new RegExp(pattern, 'gis');
+        // Every match is a candidate — reasoning text can mention the
+        // label before the real answer emits it.
+        const candidates = [...text.matchAll(regex)]
+            .map(m => ({
+                label: (m[1] || '').trim().toLowerCase(),
+                index: m.index ?? 0,
+                length: (m[1] || '').trim().length,
+                strict: true,
+            }))
+            .filter(c => c.label);
+        return pickBestCandidate(candidates);
     } catch (e) {
         console.warn(`[${EXTENSION_NAME}] Invalid regex pattern:`, pattern, e);
     }
@@ -442,12 +511,7 @@ function detectByRegex(text, pattern) {
  */
 function detectByHtmlTag(text, tagName) {
     try {
-        const escapedTag = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(`<${escapedTag}[^>]*>\\s*(.+?)\\s*</${escapedTag}>`, 'is');
-        const match = regex.exec(text);
-        if (match && match[1]) {
-            return match[1].trim().toLowerCase();
-        }
+        return pickBestCandidate(collectHtmlTagCandidates(text, tagName));
     } catch (e) {
         console.warn(`[${EXTENSION_NAME}] HTML tag detection error:`, e);
     }
@@ -470,7 +534,9 @@ function buildHideTagRegex() {
         return s.regexPattern;
     } else {
         const escaped = s.htmlTagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        return `<${escaped}[^>]*>[\\s\\S]+?<\\/${escaped}>`;
+        // Same shape as the strict detector: content stays on one line and
+        // cannot contain markup. An empty-bodied tag is hidden too.
+        return `<${escaped}[^>]*>\\s*[^\\n\\r<>]{0,${MAX_LABEL_LENGTH}}?\\s*<\\/${escaped}>`;
     }
 }
 

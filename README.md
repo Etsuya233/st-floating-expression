@@ -57,6 +57,27 @@ To hide expression tags from the displayed message:
 4. Leave **Replace With** empty
 5. Enable **AI Output** placement
 
+## Reasoning Text
+
+Models that emit chain-of-thought often mention the tag while thinking
+("按照要求生成`<expression>`标签…"). Detection collects every tag in the
+message and ranks the candidates:
+
+1. a tag whose content is single-line and markup-free beats a loose one
+2. **the tag that appears later wins** — reasoning comes first, the answer last
+3. **shorter content wins** — a match that spilled across lines swallowed body prose
+
+Multi-line tags (`<expression>\nhappy\n</expression>`) still match, because
+the whitespace around the label is ignored.
+
+## Tests
+
+Detection has a dependency-free regression suite:
+
+```
+node test-detection.mjs
+```
+
 ## Requirements
 
 - SillyTavern 1.12.0+
