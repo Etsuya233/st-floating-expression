@@ -65,18 +65,21 @@ const DEFAULT_SETTINGS = {
             rotation: 0,
         },
         // Tilts the sprite with the device's motion sensors, or with the
-        // mouse pointer when there is no sensor to read.
+        // mouse pointer when there is no sensor to read. Movement between
+        // frames is mostly translation: the sprite slides across the screen
+        // and leans only a little while it does.
         parallax: {
             enabled: false,
             source: 'auto',            // 'auto' | 'motion' | 'pointer'
             intensity: 1,              // scales every tilt, 0 disables the motion
-            maxAngle: 8,               // degrees of rotation at full tilt
-            maxShift: 1.2,             // viewport percent of drift at full tilt
+            maxAngle: 3,               // degrees of lean at full tilt
+            maxShift: 4,               // viewport percent of slide at full tilt
             inputRange: 20,            // device tilt that reaches full tilt
             deadzone: 1,               // device tilt ignored around the neutral pose
             smoothing: 0.12,           // easing per frame, lower is slower
+            glide: 0.5,                // 0 follows closely, 1 coasts before settling
             perspective: 1200,         // pixels, larger is flatter
-            zoomCompensation: 1.04,    // scale, hides the gaps opened by tilting
+            zoomCompensation: 1.2,     // scale, hides the gaps opened by the movement
             inertia: 0,                // gyroscope kick while the device is turning
             autoRecenter: true,        // eases the sprite back once held still
             recenterDelay: 1500,       // ms of stillness before that starts
@@ -448,6 +451,7 @@ function bindSettingsListeners() {
         ['#fe_parallax_input_range', 'inputRange', parseFloat],
         ['#fe_parallax_deadzone', 'deadzone', parseFloat],
         ['#fe_parallax_smoothing', 'smoothing', parseFloat],
+        ['#fe_parallax_glide', 'glide', parseFloat],
         ['#fe_parallax_perspective', 'perspective', parseFloat],
         ['#fe_parallax_zoom', 'zoomCompensation', parseFloat],
         ['#fe_parallax_inertia', 'inertia', parseFloat],
@@ -548,6 +552,7 @@ function syncParallaxControls() {
     $('#fe_parallax_input_range').val(p.inputRange);
     $('#fe_parallax_deadzone').val(p.deadzone);
     $('#fe_parallax_smoothing').val(p.smoothing);
+    $('#fe_parallax_glide').val(p.glide);
     $('#fe_parallax_perspective').val(p.perspective);
     $('#fe_parallax_zoom').val(p.zoomCompensation);
     $('#fe_parallax_inertia').val(p.inertia);
@@ -571,6 +576,7 @@ function updateParallaxLabels() {
     $('#fe_parallax_input_range_value').text(`${Math.round(p.inputRange)}°`);
     $('#fe_parallax_deadzone_value').text(`${p.deadzone.toFixed(1)}°`);
     $('#fe_parallax_smoothing_value').text(p.smoothing.toFixed(2));
+    $('#fe_parallax_glide_value').text(p.glide.toFixed(2));
     $('#fe_parallax_perspective_value').text(`${Math.round(p.perspective)}px`);
     $('#fe_parallax_zoom_value').text(`${p.zoomCompensation.toFixed(3)}×`);
     $('#fe_parallax_inertia_value').text(p.inertia.toFixed(2));

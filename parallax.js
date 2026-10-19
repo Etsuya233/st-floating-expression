@@ -14,12 +14,21 @@
 // The neutral pose can follow the device as well: held still for a
 // while, the current posture becomes the new centre, so the sprite
 // eases back instead of staying parked where the hand stopped.
+//
+// The tilt reaches the renderer through a spring rather than easing
+// straight onto the reading. That is what gives the sprite weight: it
+// starts off slowly, carries on after the device has stopped, and can
+// coast a little past the target before it settles.
 // ==============================================================
 
 /** Frame time the smoothing factors are calibrated against, in ms. */
 const FRAME_MS = 16.7;
 /** Below this the animation has settled and the loop stops. */
 const EPSILON = 0.002;
+/** Below this speed, in tilt per second, the glide counts as over. */
+const VELOCITY_EPSILON = 0.02;
+/** Damping ratio at full glide. Lower coasts further past the target. */
+const GLIDE_MIN_DAMPING = 0.6;
 /** Impulse follow speed. Snappier than the accelerometer signal. */
 const IMPULSE_SMOOTHING = 0.35;
 /** Rotation rate, in degrees per second, that asks for a full impulse. */
@@ -60,8 +69,10 @@ let wakeUpTimer = null;
 const raw = { x: 0, y: 0 };
 const impulse = { x: 0, y: 0 };
 const impulseTarget = { x: 0, y: 0 };
-/** Damped output handed to the renderer. */
+/** Spring output handed to the renderer. */
 const tilt = { x: 0, y: 0 };
+/** Speed of that output, per axis, in tilt per second. */
+const tiltVel = { x: 0, y: 0 };
 /** Fades the effect out while the device lies nearly flat. */
 let flatWeight = 1;
 
@@ -137,7 +148,8 @@ export function getParallaxStatus() {
 }
 
 /**
- * @returns {{x: number, y: number}|null} Damped tilt, null while stopped
+ * @returns {{x: number, y: number}|null} Current tilt after the spring, null
+ *   while stopped
  */
 export function getParallaxTilt() {
     if (!running) return null;
@@ -409,6 +421,54 @@ function onPointerLeave() {
 //  Animation Loop
 // =============================================================
 
+/**
+ * Natural frequency of the follow spring, read off the Smoothing slider.
+ *
+ * A spring with this frequency settles as quickly as an exponential easing
+ * with that per-frame factor, so the slider keeps the meaning it had.
+ * @param {number} smoothing Easing per frame at 60 Hz
+ * @returns {number} rad/s
+ */
+function springRate(smoothing) {
+    return clamp(-Math.log(1 - clamp(smoothing, 0.01, 0.9)) * 1000 / FRAME_MS, 0.5, 60);
+}
+
+/**
+ * Advances one axis of a damped spring by a frame.
+ *
+ * Solved in closed form instead of stepped with Euler, so a late frame can
+ * neither overshoot wildly nor change how heavy the sprite feels.
+ *
+ * @param {number} position Current offset
+ * @param {number} velocity Current speed, in units per second
+ * @param {number} target Offset the spring is pulling towards
+ * @param {number} omega Natural frequency, in rad/s — how fast it reacts
+ * @param {number} damping 1 is critically damped, below that coasts past
+ * @param {number} delta Frame time in seconds
+ * @returns {[number, number]} Next position and velocity
+ */
+function springAxis(position, velocity, target, omega, damping, delta) {
+    const offset = position - target;
+
+    if (damping >= 1) {
+        const decay = Math.exp(-omega * delta);
+        const drift = delta * (velocity + omega * offset);
+        return [
+            target + decay * (offset + drift),
+            decay * (velocity - omega * drift),
+        ];
+    }
+
+    const ring = omega * Math.sqrt(1 - damping * damping);
+    const decay = Math.exp(-damping * omega * delta);
+    const cos = Math.cos(ring * delta);
+    const sin = Math.sin(ring * delta);
+    return [
+        target + decay * (offset * cos + ((velocity + damping * omega * offset) / ring) * sin),
+        decay * (velocity * cos - ((omega * omega * offset + damping * omega * velocity) / ring) * sin),
+    ];
+}
+
 /** The tilt the sampler is steering towards right now. */
 function desired() {
     return {
@@ -421,6 +481,8 @@ function desired() {
 function hasCaughtUp(want) {
     return Math.abs(want.x - tilt.x) < EPSILON
         && Math.abs(want.y - tilt.y) < EPSILON
+        && Math.abs(tiltVel.x) < VELOCITY_EPSILON
+        && Math.abs(tiltVel.y) < VELOCITY_EPSILON
         && Math.abs(impulseTarget.x - impulse.x) < EPSILON
         && Math.abs(impulseTarget.y - impulse.y) < EPSILON;
 }
@@ -449,17 +511,20 @@ function step(now) {
 
     adaptNeutral(params, delta);
 
-    // Both factors are expressed per 16.7 ms, then scaled to the real
-    // frame time so the feel does not change with the refresh rate.
-    const follow = 1 - Math.pow(1 - clamp(params.smoothing, 0.01, 0.9), delta / FRAME_MS);
+    // Expressed per 16.7 ms, then scaled to the real frame time so the
+    // feel does not change with the refresh rate.
     const impulseFollow = 1 - Math.pow(1 - IMPULSE_SMOOTHING, delta / FRAME_MS);
 
     impulse.x += (impulseTarget.x - impulse.x) * impulseFollow;
     impulse.y += (impulseTarget.y - impulse.y) * impulseFollow;
 
     const want = desired();
-    tilt.x += (want.x - tilt.x) * follow;
-    tilt.y += (want.y - tilt.y) * follow;
+    const omega = springRate(params.smoothing);
+    const damping = 1 - clamp(params.glide, 0, 1) * (1 - GLIDE_MIN_DAMPING);
+    const seconds = delta / 1000;
+
+    [tilt.x, tiltVel.x] = springAxis(tilt.x, tiltVel.x, want.x, omega, damping, seconds);
+    [tilt.y, tiltVel.y] = springAxis(tilt.y, tiltVel.y, want.y, omega, damping, seconds);
 
     emitFrame(tilt);
 
@@ -508,6 +573,7 @@ export function startParallax({ params, source, onFrame }) {
     raw.x = raw.y = 0;
     impulse.x = impulse.y = impulseTarget.x = impulseTarget.y = 0;
     tilt.x = tilt.y = 0;
+    tiltVel.x = tiltVel.y = 0;
     flatWeight = 1;
 
     emitFrame(tilt);
@@ -548,6 +614,7 @@ export function stopParallax() {
     raw.x = raw.y = 0;
     impulse.x = impulse.y = impulseTarget.x = impulseTarget.y = 0;
     tilt.x = tilt.y = 0;
+    tiltVel.x = tiltVel.y = 0;
     flatWeight = 1;
 
     emitFrame(tilt);

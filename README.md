@@ -12,7 +12,7 @@ A [SillyTavern](https://github.com/SillyTavern/SillyTavern) extension that detec
   - **Fullscreen** — Full-viewport background layer behind or above the chat
   - **Custom** — User-defined HTML template + CSS with `{{imageSrc}}` and `{{label}}` variables
 - **Manual Placement** — In fullscreen mode, pick the **Manual** image fit to set the sprite's scale, offset and rotation. Adjust it with the settings sliders or drag it directly on screen
-- **Motion Parallax** — In fullscreen mode, tilts the sprite with the device's motion sensors, or with the mouse pointer when there is no sensor to read, and eases it back to centre once the device is held still
+- **Motion Parallax** — In fullscreen mode, slides and tilts the sprite with the device's motion sensors, or with the mouse pointer when there is no sensor to read. The movement carries momentum, so the sprite glides on for a moment after the device stops, and eases back to centre once it is held still
 - **Sprite Resolution** — Automatically matches expression labels to character sprite images with exact and prefix-based fuzzy matching
 - **Crossfade Animation** — Smooth transitions between expression changes
 - **Click-to-Toggle Opacity** — Click the window to toggle between normal and reduced opacity
@@ -50,8 +50,12 @@ A [SillyTavern](https://github.com/SillyTavern/SillyTavern) extension that detec
 
 ### Motion Parallax (Fullscreen)
 
-The sprite can lean and drift a little as you move, which reads as a shallow
-3D effect on top of the flat sprite image.
+The sprite can slide and lean a little as you move, which reads as a shallow
+3D effect on top of the flat sprite image. The slide carries the movement: the
+whole image travels across the screen, and the lean rides on top of it as a
+small tilt. The movement also has weight, because the sprite is dragged along
+by a spring rather than pinned to the reading — it sets off a touch late,
+coasts on after the device stops, and settles instead of stopping dead.
 
 1. Set **Display Mode** to Fullscreen
 2. Tick **Motion parallax**
@@ -72,7 +76,7 @@ is what the **Grant access** button is for. The panel reports which of these
 is blocking the effect.
 
 **What the effect can and cannot do** — The sprite is a single flat image, so
-the effect is a perspective tilt of that image, not the part-by-part parallax
+the effect moves and tilts that one image; it is not the part-by-part parallax
 of a Live2D model. The accelerometer sees two degrees of freedom: leaning the
 device left and right, and tipping it forwards and backwards. A turn about the
 vertical axis is invisible to it, which is where **Gyroscope Inertia** comes
@@ -87,15 +91,23 @@ also what keeps sensor noise from resetting the timer. Turn the option off if
 you want to hold a lean indefinitely. Recentring only applies to the sensor
 source; the pointer source maps the absolute mouse position, so it stays put.
 
-**Tuning** — `Intensity`, `Max Rotation` and `Max Drift` cover most of it.
+**Tuning** — `Intensity`, `Max Drift`, `Max Rotation` and `Glide` cover most
+of it. `Max Drift` is how far the image slides, as a percent of the viewport,
+and `Max Rotation` is how far it leans while it slides. `Glide` is the
+inertia: at 0 the sprite follows the device closely, and raising it makes the
+sprite coast further past the target and take longer to settle. Smaller values
+of `Smoothing` give a heavier sprite overall.
+
 The advanced block holds the saturation distance (`Full Effect At`), the
 `Dead Zone` around the neutral pose, `Smoothing`, the `Perspective` distance,
-`Zoom Compensation` (which hides the edges the tilt would otherwise open),
-axis inversion and the swap. If the sprite leans the wrong way for the way you
-hold the device, the two invert checkboxes fix that without any other change.
-The tilt fades out on its own while the device lies nearly flat, where the
-lean reading loses its direction. **Reset Parallax Settings** at the top of the
-panel puts every parallax value back to its default after a confirmation.
+`Zoom Compensation`, axis inversion and the swap. `Zoom Compensation` is the
+margin that keeps the slide from uncovering an edge: the default covers the
+slide at `Intensity` 1, so raise it if you push `Intensity` further. If the
+sprite leans the wrong way for the way you hold the device, the two invert
+checkboxes fix that without any other change. The tilt fades out on its own
+while the device lies nearly flat, where the lean reading loses its
+direction. **Reset Parallax Settings** at the top of the panel puts every
+parallax value back to its default after a confirmation.
 
 ### Hiding Expression Tags
 
