@@ -91,6 +91,67 @@
                 </select>
             </div>
 
+            <hr />
+
+            <!-- ═══ Breathing ═══ -->
+            <div class="fe-setting-group">
+                <label class="checkbox_label" for="fe_breathing_enabled">
+                    <input id="fe_breathing_enabled" type="checkbox" />
+                    <span>Breathing</span>
+                </label>
+                <small>
+                    Gives the sprite an idle breath: it swells and lifts a little, then
+                    settles back. Applies in Window and Fullscreen mode.
+                </small>
+                <div id="fe_breathing_status" class="fe-status">Off.</div>
+            </div>
+
+            <div class="fe-setting-group">
+                <label class="fe-range-header" for="fe_breathing_rate">
+                    <span>Pace</span>
+                    <output id="fe_breathing_rate_value">12.0 /min</output>
+                </label>
+                <small>A calm resting pace is around 12 breaths per minute.</small>
+                <input id="fe_breathing_rate" type="range" min="2" max="30" step="0.5" value="12" />
+            </div>
+
+            <div class="fe-setting-group">
+                <label class="fe-range-header" for="fe_breathing_depth">
+                    <span>Depth</span>
+                    <output id="fe_breathing_depth_value">2.0%</output>
+                </label>
+                <small>How much the sprite swells at the top of a breath, as a percent of its size.</small>
+                <input id="fe_breathing_depth" type="range" min="0" max="6" step="0.1" value="2" />
+            </div>
+
+            <div class="fe-setting-group">
+                <label class="fe-range-header" for="fe_breathing_rise">
+                    <span>Rise</span>
+                    <output id="fe_breathing_rise_value">1.0%</output>
+                </label>
+                <small>How far the sprite lifts on the way in, as a percent of its height.</small>
+                <input id="fe_breathing_rise" type="range" min="0" max="3" step="0.1" value="1" />
+            </div>
+
+            <div class="fe-setting-group">
+                <label class="fe-range-header" for="fe_breathing_variation">
+                    <span>Variation</span>
+                    <output id="fe_breathing_variation_value">0.30</output>
+                </label>
+                <small>
+                    Lets each breath run a little longer or shallower than the last, so the
+                    rhythm never falls into an exact loop. 0 is metronomic.
+                </small>
+                <input id="fe_breathing_variation" type="range" min="0" max="1" step="0.05" value="0.3" />
+            </div>
+
+            <label class="checkbox_label" for="fe_breathing_ignore_reduced_motion">
+                <input id="fe_breathing_ignore_reduced_motion" type="checkbox" />
+                <span>Breathe even when the system asks for reduced motion</span>
+            </label>
+
+            <hr />
+
             <!-- ─── Window Mode Settings ─── -->
             <div id="fe_window_settings">
                 <div class="fe-setting-group">
@@ -235,7 +296,7 @@
                         carried around, and follows the mouse pointer when there is no sensor
                         to read. Mobile browsers only expose the sensors over HTTPS.
                     </small>
-                    <div id="fe_parallax_status" class="fe-parallax-status">Off.</div>
+                    <div id="fe_parallax_status" class="fe-status">Off.</div>
                 </div>
 
                 <div class="fe-parallax-actions fe-inline-row">

@@ -11,6 +11,12 @@ import { getContext, extension_settings } from '../../../extensions.js';
 import { getCharaFilename } from '../../../utils.js';
 import { Popup } from '../../../popup.js';
 import {
+    getBreathingOffset,
+    isBreathingRunning,
+    startBreathing,
+    stopBreathing,
+} from './breathing.js';
+import {
     getParallaxStatus,
     getParallaxTilt,
     recenterParallax,
@@ -37,6 +43,17 @@ const DEFAULT_SETTINGS = {
 
     // Display mode: 'window' | 'fullscreen' | 'custom'
     displayMode: 'window',
+
+    // Idle breathing for the sprite, in Window and Fullscreen mode. The
+    // sprite swells as it breathes in, lifts with the swell and settles back.
+    breathing: {
+        enabled: false,
+        rate: 12,                  // breaths per minute
+        depth: 2,                  // percent of the sprite gained at the top of a breath
+        rise: 1,                   // percent of the sprite lifted on the way up
+        variation: 0.3,            // how much each breath differs from the last
+        ignoreReducedMotion: false,
+    },
 
     // Window mode
     window: {
@@ -233,6 +250,7 @@ function loadSettingsUI() {
     $('#fe_fs_z_index').val(s.fullscreen.zIndex);
     syncTransformControls();
     syncParallaxControls();
+    syncBreathingControls();
 
     // Custom
     $('#fe_custom_html').val(s.customHtml);
@@ -338,6 +356,34 @@ function bindSettingsListeners() {
         toggleDisplayModeUI(mode);
         applyDisplayMode();
         saveSettings();
+    });
+
+    // ── Breathing ──
+    $('#fe_breathing_enabled').on('change', function () {
+        getSettings().breathing.enabled = !!$(this).prop('checked');
+        saveSettings();
+        onBreathingChanged();
+    });
+
+    for (const [selector, key] of [
+        ['#fe_breathing_rate', 'rate'],
+        ['#fe_breathing_depth', 'depth'],
+        ['#fe_breathing_rise', 'rise'],
+        ['#fe_breathing_variation', 'variation'],
+    ]) {
+        $(selector).on('input', function () {
+            const value = parseFloat($(this).val());
+            if (!Number.isFinite(value)) return;
+            getSettings().breathing[key] = value;
+            saveSettings();
+            onBreathingChanged();
+        });
+    }
+
+    $('#fe_breathing_ignore_reduced_motion').on('change', function () {
+        getSettings().breathing.ignoreReducedMotion = !!$(this).prop('checked');
+        saveSettings();
+        onBreathingChanged();
     });
 
     // ── Window settings ──
@@ -531,6 +577,7 @@ function bindSettingsListeners() {
     });
 
     reducedMotionMedia.addEventListener('change', onParallaxChanged);
+    reducedMotionMedia.addEventListener('change', onBreathingChanged);
 
     // ── Custom settings ──
     $('#fe_custom_html').on('input', function () {
@@ -780,6 +827,114 @@ function updateParallaxStatus() {
     $status.text(text).toggleClass('fe-warn', warning);
     $('#fe_parallax_grant').toggle(showGrant);
     $('#fe_parallax_recenter').toggle(showRecenter);
+}
+
+// =============================================================
+//  Breathing (idle motion)
+// =============================================================
+
+/** Push the saved breathing values into the panel controls. */
+function syncBreathingControls() {
+    const b = getSettings().breathing;
+    $('#fe_breathing_enabled').prop('checked', b.enabled);
+    $('#fe_breathing_rate').val(b.rate);
+    $('#fe_breathing_depth').val(b.depth);
+    $('#fe_breathing_rise').val(b.rise);
+    $('#fe_breathing_variation').val(b.variation);
+    $('#fe_breathing_ignore_reduced_motion').prop('checked', b.ignoreReducedMotion);
+    updateBreathingLabels();
+    updateBreathingStatus();
+}
+
+function updateBreathingLabels() {
+    const b = getSettings().breathing;
+    $('#fe_breathing_rate_value').text(`${b.rate.toFixed(1)} /min`);
+    $('#fe_breathing_depth_value').text(`${b.depth.toFixed(1)}%`);
+    $('#fe_breathing_rise_value').text(`${b.rise.toFixed(1)}%`);
+    $('#fe_breathing_variation_value').text(b.variation.toFixed(2));
+}
+
+/** True when the breathing setting is on and nothing blocks it. */
+function breathingAllowed() {
+    const s = getSettings();
+    const b = s.breathing;
+    if (!s.enabled || !b.enabled) return false;
+    // Custom mode replaces the sprite with the user's own markup.
+    if (s.displayMode === 'custom') return false;
+    if (reducedMotionMedia.matches && !b.ignoreReducedMotion) return false;
+    return b.depth > 0 || b.rise > 0;
+}
+
+/** True when the loop has a sprite to move. */
+function shouldRunBreathing() {
+    if (!breathingAllowed()) return false;
+    // The on-screen editor measures the sprite as it was placed, so leave the
+    // breath out of it while the frame is open.
+    if ($(`#${ADJUST_FRAME_ID}`).length) return false;
+
+    const holder = $('#floating-expression-holder');
+    if (!holder.length || holder.hasClass('fe-hidden')) return false;
+    return !!holder.find('img.fe-sprite').not('.fe-sprite-leaving').attr('src');
+}
+
+/** Starts or stops the loop so it matches the current settings. */
+function syncBreathing() {
+    const wanted = shouldRunBreathing();
+    const running = isBreathingRunning();
+
+    if (wanted && !running) {
+        startBreathing({
+            params: () => getSettings().breathing,
+            onFrame: applySpriteTransform,
+        });
+    } else if (!wanted && running) {
+        stopBreathing();
+    }
+
+    updateBreathingStatus();
+}
+
+function onBreathingChanged() {
+    updateBreathingLabels();
+    syncBreathing();
+}
+
+function updateBreathingStatus() {
+    const $status = $('#fe_breathing_status');
+    if (!$status.length) return;
+
+    const s = getSettings();
+    const b = s.breathing;
+    let text = 'Off.';
+    let warning = false;
+
+    if (b.enabled) {
+        if (s.displayMode === 'custom') {
+            text = 'Not used in Custom HTML mode.';
+        } else if (b.depth <= 0 && b.rise <= 0) {
+            text = 'Set a depth or a rise above zero to see it.';
+            warning = true;
+        } else if (reducedMotionMedia.matches && !b.ignoreReducedMotion) {
+            text = 'Paused — your system asks for reduced motion.';
+            warning = true;
+        } else if (!isBreathingRunning()) {
+            text = 'Waiting for a sprite on screen.';
+        } else {
+            text = 'Active.';
+        }
+    }
+
+    $status.text(text).toggleClass('fe-warn', warning);
+}
+
+/**
+ * Re-checks both of the effects that keep moving the sprite. They park and
+ * restart on the same occasions: a different sprite, another display mode, or
+ * the placement editor opening and closing.
+ */
+function syncSpriteMotion() {
+    syncParallax();
+    syncBreathing();
 }
 
 // =============================================================
@@ -1090,7 +1245,7 @@ function applyDisplayMode() {
         applyDefaultPosition();
     }
 
-    syncParallax();
+    syncSpriteMotion();
 }
 
 /** Apply window mode inline styles from settings */
@@ -1122,6 +1277,7 @@ function applyWindowStyles() {
     });
 
     holder.find('img.fe-sprite').css('object-fit', w.objectFit);
+    applySpriteTransform();
 }
 
 /** Apply fullscreen mode inline styles from settings */
@@ -1145,8 +1301,8 @@ function applyFullscreenStyles() {
 }
 
 /**
- * Writes the sprite transform: the manual placement, plus the live
- * parallax tilt when the sampler is running.
+ * Writes the sprite transform: the manual placement, the live parallax tilt
+ * and the idle breath, whichever of them are on.
  *
  * The perspective lives inside the transform list on purpose. SillyTavern
  * puts a transform on <html>, and a transformed ancestor flattens any
@@ -1156,11 +1312,15 @@ function applySpriteTransform() {
     const holder = $('#floating-expression-holder');
     if (!holder.length) return;
 
-    const fs = getSettings().fullscreen;
+    const s = getSettings();
+    const fs = s.fullscreen;
     const p = fs.parallax;
     const t = fs.transform;
-    const manual = fs.objectFit === 'manual';
+    // The manual placement belongs to fullscreen alone, so a window dragged
+    // into place does not inherit the scale and offsets set there.
+    const manual = s.displayMode === 'fullscreen' && fs.objectFit === 'manual';
     const tilt = getParallaxTilt();
+    const breath = getBreathingOffset();
     const parts = [];
 
     if (tilt) {
@@ -1171,8 +1331,14 @@ function applySpriteTransform() {
         parts.push(`translate(${t.x}vw, ${t.y}vh) rotate(${t.rotation}deg)`);
     }
 
-    const scale = (manual ? t.scale : 1) * spriteZoom();
-    if (manual || scale !== 1) {
+    if (breath) {
+        // The lift is a percent of the sprite, so it grows with whatever fit
+        // is in use. Air taken in raises the body, hence the negative sign.
+        parts.push(`translateY(${breath.rise.toFixed(3)}%)`);
+    }
+
+    const scale = (manual ? t.scale : 1) * spriteZoom() * (breath ? breath.scale : 1);
+    if (manual || Math.abs(scale - 1) > 1e-4) {
         parts.push(`scale(${scale.toFixed(4)})`);
     }
 
@@ -1317,12 +1483,12 @@ function initClickToggle($holder) {
 
 function showHolder() {
     $('#floating-expression-holder').removeClass('fe-hidden');
-    syncParallax();
+    syncSpriteMotion();
 }
 
 function hideHolder() {
     $('#floating-expression-holder').addClass('fe-hidden');
-    syncParallax();
+    syncSpriteMotion();
 }
 
 /**
@@ -1357,7 +1523,8 @@ function setSprite(imageSrc) {
     img.attr('src', imageSrc);
     img.attr('alt', currentExpression || '');
     currentImageSrc = imageSrc;
-    syncParallax();
+    // Also the moment the loop gets a sprite to move.
+    syncSpriteMotion();
 }
 
 /**
@@ -1469,8 +1636,8 @@ function startAdjusting() {
     bindAdjustFrame(frame);
 
     // The editor measures the transform the sprite would have without the
-    // parallax, so park the sampler until the session is over.
-    syncParallax();
+    // parallax or the breath, so park both until the session is over.
+    syncSpriteMotion();
 
     // Own toolbar, pinned above everything: the settings panel can end up
     // underneath the sprite while adjusting, which would hide its buttons.
@@ -1508,7 +1675,7 @@ function stopAdjusting() {
         applyFullscreenStyles();
     }
 
-    syncParallax();
+    syncSpriteMotion();
 
     $('#fe_fs_adjust_toggle').removeClass('fe-active');
     $('#fe_fs_adjust_toggle span').text('Adjust on screen');
