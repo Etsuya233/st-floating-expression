@@ -286,6 +286,46 @@
                     <input id="fe_parallax_max_shift" type="range" min="0" max="6" step="0.1" value="1.2" />
                 </div>
 
+                <hr />
+
+                <div class="fe-setting-group">
+                    <label class="checkbox_label" for="fe_parallax_auto_recenter">
+                        <input id="fe_parallax_auto_recenter" type="checkbox" />
+                        <span>Ease back to centre when held still</span>
+                    </label>
+                    <small>
+                        The neutral pose follows the device once it stops moving, so the sprite
+                        drifts back instead of staying parked where the hand stopped.
+                    </small>
+                </div>
+
+                <div class="fe-setting-group">
+                    <label class="fe-range-header" for="fe_parallax_recenter_delay">
+                        <span>Stillness Delay</span>
+                        <output id="fe_parallax_recenter_delay_value">1500ms</output>
+                    </label>
+                    <small>How long the device has to stay still before the return starts.</small>
+                    <input id="fe_parallax_recenter_delay" type="range" min="200" max="5000" step="100" value="1500" />
+                </div>
+
+                <div class="fe-setting-group">
+                    <label class="fe-range-header" for="fe_parallax_recenter_time">
+                        <span>Return Time</span>
+                        <output id="fe_parallax_recenter_time_value">1.2s</output>
+                    </label>
+                    <small>Time constant of the return. Larger is slower.</small>
+                    <input id="fe_parallax_recenter_time" type="range" min="0.2" max="5" step="0.1" value="1.2" />
+                </div>
+
+                <div class="fe-setting-group">
+                    <label class="fe-range-header" for="fe_parallax_recenter_threshold">
+                        <span>Stillness Threshold</span>
+                        <output id="fe_parallax_recenter_threshold_value">3.0°</output>
+                    </label>
+                    <small>How far the device may drift before it counts as movement again.</small>
+                    <input id="fe_parallax_recenter_threshold" type="range" min="0.5" max="15" step="0.5" value="3" />
+                </div>
+
                 <details class="fe-advanced">
                     <summary>Advanced tuning</summary>
 

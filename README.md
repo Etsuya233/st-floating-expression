@@ -12,7 +12,7 @@ A [SillyTavern](https://github.com/SillyTavern/SillyTavern) extension that detec
   - **Fullscreen** — Full-viewport background layer behind or above the chat
   - **Custom** — User-defined HTML template + CSS with `{{imageSrc}}` and `{{label}}` variables
 - **Manual Placement** — In fullscreen mode, pick the **Manual** image fit to set the sprite's scale, offset and rotation. Adjust it with the settings sliders or drag it directly on screen
-- **Motion Parallax** — In fullscreen mode, tilts the sprite with the device's motion sensors, or with the mouse pointer when there is no sensor to read
+- **Motion Parallax** — In fullscreen mode, tilts the sprite with the device's motion sensors, or with the mouse pointer when there is no sensor to read, and eases it back to centre once the device is held still
 - **Sprite Resolution** — Automatically matches expression labels to character sprite images with exact and prefix-based fuzzy matching
 - **Crossfade Animation** — Smooth transitions between expression changes
 - **Click-to-Toggle Opacity** — Click the window to toggle between normal and reduced opacity
@@ -77,6 +77,15 @@ of a Live2D model. The accelerometer sees two degrees of freedom: leaning the
 device left and right, and tipping it forwards and backwards. A turn about the
 vertical axis is invisible to it, which is where **Gyroscope Inertia** comes
 in: it adds a short kick while the device is turning fast and decays back.
+
+**Recentring** — On by default. Once the posture has been steady for
+`Stillness Delay`, that posture becomes the new centre and the sprite eases
+back to the middle instead of staying parked where your hand stopped.
+`Return Time` is the time constant of that return, and `Stillness Threshold`
+is how far the device may drift before it counts as movement again, which is
+also what keeps sensor noise from resetting the timer. Turn the option off if
+you want to hold a lean indefinitely. Recentring only applies to the sensor
+source; the pointer source maps the absolute mouse position, so it stays put.
 
 **Tuning** — `Intensity`, `Max Rotation` and `Max Drift` cover most of it.
 The advanced block holds the saturation distance (`Full Effect At`), the

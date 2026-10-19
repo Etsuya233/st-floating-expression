@@ -10,6 +10,10 @@
 // Rotation about the gravity axis (turning the device to face left
 // or right) is invisible to it, so the gyroscope is layered on top
 // as a decaying impulse.
+//
+// The neutral pose can follow the device as well: held still for a
+// while, the current posture becomes the new centre, so the sprite
+// eases back instead of staying parked where the hand stopped.
 // ==============================================================
 
 /** Frame time the smoothing factors are calibrated against, in ms. */
@@ -24,6 +28,8 @@ const IMPULSE_RATE_SCALE = 400;
 const TILT_RANGE_MARGIN = 1;
 /** Gravity component at which the device counts as lying flat. */
 const FLAT_GRAVITY = 0.94;
+/** Posture difference below which the neutral pose snaps onto the reading. */
+const SETTLE_ANGLE = 0.05;
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -44,6 +50,11 @@ let neutral = null;
 let latest = null;
 /** Whether an orientation reading has arrived since the last start. */
 let sawSensorData = false;
+/** Posture the stillness timer is measured against. */
+let stillAnchor = null;
+let anchorTime = 0;
+/** Wakes the loop once the stillness delay has passed. */
+let wakeUpTimer = null;
 
 /** Target tilt in [-1, 1] per axis, before the impulse, scaled by intensity. */
 const raw = { x: 0, y: 0 };
@@ -62,6 +73,24 @@ const toDeg = rad => rad * 180 / Math.PI;
 
 function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
+}
+
+function dot(a, b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+/** Angle between two directions, in degrees. */
+function angleBetween(a, b) {
+    return toDeg(Math.acos(clamp(dot(a, b), -1, 1)));
+}
+
+/** Interpolates two directions while staying on the unit sphere. */
+function nlerp(from, to, k) {
+    const x = from.x + (to.x - from.x) * k;
+    const y = from.y + (to.y - from.y) * k;
+    const z = from.z + (to.z - from.z) * k;
+    const length = Math.hypot(x, y, z) || 1;
+    return { x: x / length, y: y / length, z: z / length };
 }
 
 // =============================================================
@@ -89,7 +118,8 @@ export function resolveSource(source) {
 /**
  * @returns {{running: boolean, source: string|null, permission: string,
  *   supported: boolean, secure: boolean, needsPermission: boolean,
- *   hasSensorData: boolean, flatPose: boolean, reducedMotion: boolean}}
+ *   hasSensorData: boolean, flatPose: boolean, recentring: boolean,
+ *   reducedMotion: boolean}}
  */
 export function getParallaxStatus() {
     return {
@@ -101,6 +131,7 @@ export function getParallaxStatus() {
         needsPermission: permissionRequired(),
         hasSensorData: sawSensorData,
         flatPose: flatWeight < 0.5,
+        recentring: running && isAdapting(),
         reducedMotion: reducedMotion.matches,
     };
 }
@@ -203,8 +234,111 @@ function normalizeTilt(degrees, params) {
 
 function onDeviceOrientation(event) {
     if (event.beta === null || event.gamma === null) return;
-    applyGravity(gravityInDevice(event));
+    const gravity = gravityInDevice(event);
+    trackStillness(gravity);
+    applyGravity(gravity);
     requestTick();
+}
+
+/**
+ * How long the device has held its posture, in ms.
+ *
+ * Read from the clock rather than accumulated per event. Browsers only fire
+ * deviceorientation when the reading changes by a significant amount, so a
+ * device that is genuinely still stops producing events — which is exactly
+ * the state this timer is meant to detect.
+ */
+function stillnessMs() {
+    return stillAnchor ? performance.now() - anchorTime : 0;
+}
+
+/**
+ * Notes the current posture, restarting the stillness timer when the device
+ * has moved away from the anchor.
+ *
+ * The reading is compared against an anchor rather than against the previous
+ * sample, so sensor noise cannot pass the threshold on its own.
+ * @param {{x: number, y: number, z: number}} gravity
+ */
+function trackStillness(gravity) {
+    if (!stillAnchor) {
+        stillAnchor = gravity;
+        anchorTime = performance.now();
+        return;
+    }
+
+    if (angleBetween(stillAnchor, gravity) > readParams().recenterThreshold) {
+        stillAnchor = gravity;
+        anchorTime = performance.now();
+    }
+}
+
+/**
+ * Pose difference at which the recentring counts as done. Inside the dead
+ * zone the tilt is already zero, so folding the neutral pose onto the reading
+ * there cannot show up on screen, and the loop can park that much sooner.
+ * @returns {number} degrees
+ */
+function recenterFinishAngle() {
+    return Math.max(SETTLE_ANGLE, readParams().deadzone || 0);
+}
+
+/**
+ * Drifts the neutral pose towards the current posture once the device has
+ * been held still long enough. The tilt is measured against the neutral
+ * pose, so moving that is all it takes for the sprite to come back.
+ * @param {object} params
+ * @param {number} delta Frame time in ms
+ */
+function adaptNeutral(params, delta) {
+    if (!isAdapting()) return;
+
+    if (angleBetween(neutral, latest) <= recenterFinishAngle()) {
+        neutral = latest;
+    } else {
+        const perFrame = 1 - Math.exp(-FRAME_MS / (Math.max(0.1, params.recenterTime) * 1000));
+        neutral = nlerp(neutral, latest, 1 - Math.pow(1 - perFrame, delta / FRAME_MS));
+    }
+
+    applyGravity(latest);
+}
+
+/**
+ * Whether the neutral pose is on its way to the current posture. The frame
+ * loop has to know: a drift of a fraction of a degree per frame moves the
+ * output slower than the easing catches up, so the usual "output reached
+ * target" test would park the loop and strand the sprite off centre.
+ * @returns {boolean}
+ */
+function isAdapting() {
+    if (!neutral || !latest) return false;
+    const params = readParams();
+    if (!params.autoRecenter) return false;
+    if (stillnessMs() < params.recenterDelay) return false;
+    return angleBetween(neutral, latest) > recenterFinishAngle();
+}
+
+/**
+ * Schedules a single wake-up for the moment the stillness delay runs out.
+ * Nothing else would restart the loop afterwards, since the sensor has gone
+ * quiet for good at that point.
+ */
+function armRecenterWakeUp() {
+    if (wakeUpTimer !== null) {
+        clearTimeout(wakeUpTimer);
+        wakeUpTimer = null;
+    }
+
+    if (!running || !neutral || !latest) return;
+    const params = readParams();
+    if (!params.autoRecenter) return;
+    if (angleBetween(neutral, latest) <= recenterFinishAngle()) return;
+
+    const remaining = Math.max(0, params.recenterDelay - stillnessMs());
+    wakeUpTimer = setTimeout(() => {
+        wakeUpTimer = null;
+        requestTick();
+    }, remaining + FRAME_MS);
 }
 
 /**
@@ -283,15 +417,22 @@ function desired() {
     };
 }
 
+/** Whether the output has caught up with the values the loop is steering to. */
+function hasCaughtUp(want) {
+    return Math.abs(want.x - tilt.x) < EPSILON
+        && Math.abs(want.y - tilt.y) < EPSILON
+        && Math.abs(impulseTarget.x - impulse.x) < EPSILON
+        && Math.abs(impulseTarget.y - impulse.y) < EPSILON;
+}
+
 function requestTick() {
     if (rafId !== null || !running) return;
 
-    // A device that is resting still keeps emitting readings. Leave the
-    // loop parked while the output already matches them.
-    const want = desired();
-    if (Math.abs(want.x - tilt.x) < EPSILON && Math.abs(want.y - tilt.y) < EPSILON
-        && Math.abs(impulseTarget.x - impulse.x) < EPSILON
-        && Math.abs(impulseTarget.y - impulse.y) < EPSILON) {
+    // A device that is resting still keeps emitting readings. Leave the loop
+    // parked while the output already matches them, unless the neutral pose
+    // is still on its way to the current posture.
+    if (hasCaughtUp(desired()) && !isAdapting()) {
+        armRecenterWakeUp();
         return;
     }
 
@@ -305,6 +446,8 @@ function step(now) {
     const delta = lastFrameTime ? Math.min(64, now - lastFrameTime) : FRAME_MS;
     lastFrameTime = now;
     const params = readParams();
+
+    adaptNeutral(params, delta);
 
     // Both factors are expressed per 16.7 ms, then scaled to the real
     // frame time so the feel does not change with the refresh rate.
@@ -320,13 +463,10 @@ function step(now) {
 
     emitFrame(tilt);
 
-    const settled = Math.abs(want.x - tilt.x) < EPSILON
-        && Math.abs(want.y - tilt.y) < EPSILON
-        && Math.abs(impulseTarget.x - impulse.x) < EPSILON
-        && Math.abs(impulseTarget.y - impulse.y) < EPSILON;
-
-    if (!settled) {
+    if (!hasCaughtUp(want) || isAdapting()) {
         rafId = requestAnimationFrame(step);
+    } else {
+        armRecenterWakeUp();
     }
 }
 
@@ -362,6 +502,8 @@ export function startParallax({ params, source, onFrame }) {
     running = true;
     neutral = null;
     latest = null;
+    stillAnchor = null;
+    anchorTime = 0;
     sawSensorData = false;
     raw.x = raw.y = 0;
     impulse.x = impulse.y = impulseTarget.x = impulseTarget.y = 0;
@@ -392,10 +534,16 @@ export function stopParallax() {
     if (rafId !== null) cancelAnimationFrame(rafId);
     rafId = null;
     lastFrameTime = 0;
+    if (wakeUpTimer !== null) {
+        clearTimeout(wakeUpTimer);
+        wakeUpTimer = null;
+    }
 
     resolvedSource = null;
     neutral = null;
     latest = null;
+    stillAnchor = null;
+    anchorTime = 0;
     sawSensorData = false;
     raw.x = raw.y = 0;
     impulse.x = impulse.y = impulseTarget.x = impulseTarget.y = 0;

@@ -78,6 +78,10 @@ const DEFAULT_SETTINGS = {
             perspective: 1200,         // pixels, larger is flatter
             zoomCompensation: 1.04,    // scale, hides the gaps opened by tilting
             inertia: 0,                // gyroscope kick while the device is turning
+            autoRecenter: true,        // eases the sprite back once held still
+            recenterDelay: 1500,       // ms of stillness before that starts
+            recenterTime: 1.2,         // seconds, return time constant
+            recenterThreshold: 3,      // degrees of movement that counts as moving
             invertX: false,
             invertY: false,
             swapAxes: false,
@@ -447,6 +451,9 @@ function bindSettingsListeners() {
         ['#fe_parallax_perspective', 'perspective', parseFloat],
         ['#fe_parallax_zoom', 'zoomCompensation', parseFloat],
         ['#fe_parallax_inertia', 'inertia', parseFloat],
+        ['#fe_parallax_recenter_delay', 'recenterDelay', parseFloat],
+        ['#fe_parallax_recenter_time', 'recenterTime', parseFloat],
+        ['#fe_parallax_recenter_threshold', 'recenterThreshold', parseFloat],
     ]) {
         $(selector).on('input', function () {
             const value = parse($(this).val());
@@ -458,6 +465,7 @@ function bindSettingsListeners() {
     }
 
     for (const [selector, key] of [
+        ['#fe_parallax_auto_recenter', 'autoRecenter'],
         ['#fe_parallax_invert_x', 'invertX'],
         ['#fe_parallax_invert_y', 'invertY'],
         ['#fe_parallax_swap_axes', 'swapAxes'],
@@ -543,6 +551,10 @@ function syncParallaxControls() {
     $('#fe_parallax_perspective').val(p.perspective);
     $('#fe_parallax_zoom').val(p.zoomCompensation);
     $('#fe_parallax_inertia').val(p.inertia);
+    $('#fe_parallax_auto_recenter').prop('checked', p.autoRecenter);
+    $('#fe_parallax_recenter_delay').val(p.recenterDelay);
+    $('#fe_parallax_recenter_time').val(p.recenterTime);
+    $('#fe_parallax_recenter_threshold').val(p.recenterThreshold);
     $('#fe_parallax_invert_x').prop('checked', p.invertX);
     $('#fe_parallax_invert_y').prop('checked', p.invertY);
     $('#fe_parallax_swap_axes').prop('checked', p.swapAxes);
@@ -562,6 +574,9 @@ function updateParallaxLabels() {
     $('#fe_parallax_perspective_value').text(`${Math.round(p.perspective)}px`);
     $('#fe_parallax_zoom_value').text(`${p.zoomCompensation.toFixed(3)}×`);
     $('#fe_parallax_inertia_value').text(p.inertia.toFixed(2));
+    $('#fe_parallax_recenter_delay_value').text(`${Math.round(p.recenterDelay)}ms`);
+    $('#fe_parallax_recenter_time_value').text(`${p.recenterTime.toFixed(1)}s`);
+    $('#fe_parallax_recenter_threshold_value').text(`${p.recenterThreshold.toFixed(1)}°`);
 }
 
 /** True when the parallax setting is on and nothing blocks it. */
@@ -675,6 +690,8 @@ function updateParallaxStatus() {
             text = 'Active — waiting for sensor readings.';
         } else if (status.flatPose) {
             text = 'Active — the device is lying almost flat, hold it upright.';
+        } else if (status.recentring) {
+            text = 'Active — easing back to centre.';
         } else {
             text = 'Active — following the device orientation.';
         }
