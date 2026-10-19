@@ -28,11 +28,26 @@ const EPSILON = 0.002;
 /** Below this speed, in tilt per second, the glide counts as over. */
 const VELOCITY_EPSILON = 0.02;
 /** Damping ratio at full glide. Lower coasts further past the target. */
-const GLIDE_MIN_DAMPING = 0.6;
+const GLIDE_MIN_DAMPING = 0.35;
+/** How much faster the spring runs than the easing the Smoothing slider means. */
+const SPRING_RATE_FACTOR = 1.3;
 /** Impulse follow speed. Snappier than the accelerometer signal. */
 const IMPULSE_SMOOTHING = 0.35;
 /** Rotation rate, in degrees per second, that asks for a full impulse. */
 const IMPULSE_RATE_SCALE = 400;
+/** Gravity, in metres per second squared, for taking it out of a reading. */
+const GRAVITY_ACCEL = 9.81;
+/** How far the device has to be moved out from under the sprite, in tilt per
+ *  m/s² of sideways acceleration, for the whole slide to be reached. */
+const PAN_GAIN = 0.3;
+/** Follow speed of the acceleration reading. A hand is never perfectly still. */
+const PAN_SMOOTHING = 0.25;
+/** Sideways acceleration below this is noise, in m/s². */
+const PAN_DEADZONE = 0.15;
+/** Readings older than this count as the device resting, in ms. */
+const PAN_STALE_MS = 150;
+/** Per-frame fade of a stale acceleration reading. */
+const PAN_FADE = 0.12;
 /** Device tilt, from the neutral pose, that saturates the effect. */
 const TILT_RANGE_MARGIN = 1;
 /** Gravity component at which the device counts as lying flat. */
@@ -69,6 +84,12 @@ let wakeUpTimer = null;
 const raw = { x: 0, y: 0 };
 const impulse = { x: 0, y: 0 };
 const impulseTarget = { x: 0, y: 0 };
+/** Sideways acceleration of the whole device, in the screen frame, m/s². */
+const linearAccel = { x: 0, y: 0 };
+/** When the last motion reading arrived, against the clock. */
+let lastMotionTime = 0;
+/** How far the device has been moved out from under the sprite, in tilt. */
+const pan = { x: 0, y: 0 };
 /** Spring output handed to the renderer. */
 const tilt = { x: 0, y: 0 };
 /** Speed of that output, per axis, in tilt per second. */
@@ -384,6 +405,8 @@ function onDeviceMotion(event) {
     const params = readParams();
     const rate = event.rotationRate;
 
+    updateLinearAccel(event, params);
+
     if (!params.inertia || !rate
         || rate.alpha === null || rate.beta === null || rate.gamma === null) {
         impulseTarget.x = 0;
@@ -400,6 +423,54 @@ function onDeviceMotion(event) {
     impulseTarget.x = clamp(screen.y / IMPULSE_RATE_SCALE, -1, 1) * params.inertia * params.intensity;
     impulseTarget.y = clamp(screen.x / IMPULSE_RATE_SCALE, -1, 1) * params.inertia * params.intensity;
     requestTick();
+}
+
+/**
+ * Sideways acceleration of the device itself, in the screen frame, m/s².
+ *
+ * Moving the phone across a plane is the one motion gravity cannot describe,
+ * so this is read from the accelerometer instead: the reading with gravity
+ * already removed where the browser provides it, and otherwise the raw one
+ * with the gravity the orientation readings describe taken out of it.
+ * @param {DeviceMotionEvent} event
+ * @param {object} params
+ */
+function updateLinearAccel(event, params) {
+    const declared = event.acceleration;
+    const withGravity = event.accelerationIncludingGravity;
+    let linear = declared;
+
+    if ((!linear || linear.x === null) && withGravity && latest) {
+        linear = {
+            x: (withGravity.x || 0) + GRAVITY_ACCEL * latest.x,
+            y: (withGravity.y || 0) + GRAVITY_ACCEL * latest.y,
+        };
+    }
+
+    if (!linear || linear.x === null || linear.y === null) return;
+
+    const screen = toScreenAxis({ x: linear.x, y: linear.y }, screenOrientationAngle());
+    const pastDeadzone = value => Math.abs(value) < PAN_DEADZONE
+        ? 0
+        : value - Math.sign(value) * PAN_DEADZONE;
+
+    linearAccel.x += (pastDeadzone(screen.x) - linearAccel.x) * PAN_SMOOTHING;
+    linearAccel.y += (pastDeadzone(screen.y) - linearAccel.y) * PAN_SMOOTHING;
+    lastMotionTime = performance.now();
+    updatePan(params);
+}
+
+/**
+ * How far the device being moved out from under it has pushed the sprite.
+ *
+ * Kept a plain function of the acceleration reading so that the wake-up test
+ * in requestTick() can see the push the moment a reading arrives, without
+ * waiting for a frame to compute it.
+ * @param {object} params
+ */
+function updatePan(params) {
+    pan.x = clamp(linearAccel.x * PAN_GAIN * params.intensity, -1, 1);
+    pan.y = clamp(linearAccel.y * PAN_GAIN * params.intensity, -1, 1);
 }
 
 function onPointerMove(event) {
@@ -424,13 +495,15 @@ function onPointerLeave() {
 /**
  * Natural frequency of the follow spring, read off the Smoothing slider.
  *
- * A spring with this frequency settles as quickly as an exponential easing
- * with that per-frame factor, so the slider keeps the meaning it had.
+ * A spring spends its first moments gathering speed, which reads as lag, so
+ * it needs a higher rate than the exponential easing the slider stood for to
+ * track the device as closely. Beyond that it settles at the same pace.
  * @param {number} smoothing Easing per frame at 60 Hz
  * @returns {number} rad/s
  */
 function springRate(smoothing) {
-    return clamp(-Math.log(1 - clamp(smoothing, 0.01, 0.9)) * 1000 / FRAME_MS, 0.5, 60);
+    const easing = -Math.log(1 - clamp(smoothing, 0.01, 0.9)) * 1000 / FRAME_MS;
+    return clamp(easing * SPRING_RATE_FACTOR, 0.5, 60);
 }
 
 /**
@@ -471,9 +544,15 @@ function springAxis(position, velocity, target, omega, damping, delta) {
 
 /** The tilt the sampler is steering towards right now. */
 function desired() {
-    return {
+    // The pan rides on top of the tilt reading and stays outside the flat
+    // fade: a phone lying on a table can still be pushed around.
+    const held = {
         x: clamp(raw.x + impulse.x, -2, 2) * flatWeight,
         y: clamp(raw.y + impulse.y, -2, 2) * flatWeight,
+    };
+    return {
+        x: clamp(held.x + pan.x, -2, 2),
+        y: clamp(held.y + pan.y, -2, 2),
     };
 }
 
@@ -510,6 +589,17 @@ function step(now) {
     const params = readParams();
 
     adaptNeutral(params, delta);
+
+    // The phone being carried across a plane is pushed out from under the
+    // sprite, which leans the other way and swings back once it stops. The
+    // reading is smoothed per event, and fades on its own when the device
+    // settles and the readings dry up.
+    if (performance.now() - lastMotionTime > PAN_STALE_MS) {
+        const fade = 1 - Math.pow(1 - PAN_FADE, delta / FRAME_MS);
+        linearAccel.x -= linearAccel.x * fade;
+        linearAccel.y -= linearAccel.y * fade;
+    }
+    updatePan(params);
 
     // Expressed per 16.7 ms, then scaled to the real frame time so the
     // feel does not change with the refresh rate.
@@ -574,6 +664,9 @@ export function startParallax({ params, source, onFrame }) {
     impulse.x = impulse.y = impulseTarget.x = impulseTarget.y = 0;
     tilt.x = tilt.y = 0;
     tiltVel.x = tiltVel.y = 0;
+    linearAccel.x = linearAccel.y = 0;
+    pan.x = pan.y = 0;
+    lastMotionTime = 0;
     flatWeight = 1;
 
     emitFrame(tilt);
@@ -615,6 +708,9 @@ export function stopParallax() {
     impulse.x = impulse.y = impulseTarget.x = impulseTarget.y = 0;
     tilt.x = tilt.y = 0;
     tiltVel.x = tiltVel.y = 0;
+    linearAccel.x = linearAccel.y = 0;
+    pan.x = pan.y = 0;
+    lastMotionTime = 0;
     flatWeight = 1;
 
     emitFrame(tilt);

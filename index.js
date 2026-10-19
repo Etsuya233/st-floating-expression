@@ -73,13 +73,13 @@ const DEFAULT_SETTINGS = {
             source: 'auto',            // 'auto' | 'motion' | 'pointer'
             intensity: 1,              // scales every tilt, 0 disables the motion
             maxAngle: 3,               // degrees of lean at full tilt
-            maxShift: 4,               // viewport percent of slide at full tilt
+            maxShift: 8,               // viewport percent of slide at full tilt
             inputRange: 20,            // device tilt that reaches full tilt
             deadzone: 1,               // device tilt ignored around the neutral pose
             smoothing: 0.12,           // easing per frame, lower is slower
-            glide: 0.5,                // 0 follows closely, 1 coasts before settling
+            glide: 0.7,                // 0 follows closely, 1 coasts before settling
             perspective: 1200,         // pixels, larger is flatter
-            zoomCompensation: 1.2,     // scale, hides the gaps opened by the movement
+            zoomCompensation: 1.35,    // scale, hides the gaps opened by the movement
             inertia: 0,                // gyroscope kick while the device is turning
             autoRecenter: true,        // eases the sprite back once held still
             recenterDelay: 1500,       // ms of stillness before that starts
@@ -95,6 +95,15 @@ const DEFAULT_SETTINGS = {
     // Custom mode
     customHtml: '',
     customCss: '',
+};
+
+// Parallax values from before the slide became the main motion. A panel still
+// sitting on all three was never tuned, so it should follow the new feel
+// rather than mask it.
+const UNTOUCHED_PARALLAX = {
+    maxAngle: 8,
+    maxShift: 1.2,
+    zoomCompensation: 1.04,
 };
 
 const WINDOW_PRESETS = {
@@ -164,11 +173,26 @@ function mergeDefaults(target, defaults) {
     }
 }
 
+/**
+ * Carries a panel that never moved off the old defaults onto the current
+ * ones, so a saved copy of the old feel cannot hide the new one.
+ */
+function liftUntouchedParallax() {
+    const parallax = getSettings().fullscreen.parallax;
+    const stale = Object.entries(UNTOUCHED_PARALLAX);
+    if (!stale.every(([key, value]) => parallax[key] === value)) return;
+
+    for (const [key] of stale) {
+        parallax[key] = DEFAULT_SETTINGS.fullscreen.parallax[key];
+    }
+}
+
 function initSettings() {
     if (!extension_settings[EXTENSION_NAME]) {
         extension_settings[EXTENSION_NAME] = {};
     }
     mergeDefaults(extension_settings[EXTENSION_NAME], DEFAULT_SETTINGS);
+    liftUntouchedParallax();
 }
 
 function saveSettings() {
@@ -482,19 +506,7 @@ function bindSettingsListeners() {
         });
     }
 
-    $('#fe_parallax_grant').on('click', async function () {
-        const result = await grantMotionAccessIfNeeded(true);
-        if (result === 'granted') {
-            toastr.success('Motion access granted.');
-        } else if (result === 'insecure') {
-            toastr.warning('Motion sensors need HTTPS or localhost.');
-        } else if (result === 'unsupported') {
-            toastr.warning('This device does not report motion sensors.');
-        } else if (result === 'denied') {
-            toastr.error('Motion access was denied. Allow it in the browser site settings, then reload.');
-        }
-        onParallaxChanged();
-    });
+    $('#fe_parallax_grant').on('click', () => void grantMotionAccessWithFeedback());
 
     $('#fe_parallax_recenter').on('click', function () {
         recenterParallax();
@@ -658,6 +670,62 @@ function grantMotionAccessIfNeeded(force = false) {
     if (!status.needsPermission || status.permission === 'granted') return null;
 
     return requestMotionAccess();
+}
+
+/**
+ * Asks for sensor access and reports how it went. Shared by the panel
+ * button and the notification offered on entering a chat.
+ */
+async function grantMotionAccessWithFeedback() {
+    const result = await grantMotionAccessIfNeeded(true);
+    if (result === 'granted') {
+        // Granted from the panel here means the notification is already stale.
+        if (motionAccessToast) toastr.clear(motionAccessToast);
+        toastr.success('Motion access granted.');
+    } else if (result === 'insecure') {
+        toastr.warning('Motion sensors need HTTPS or localhost.');
+    } else if (result === 'unsupported') {
+        toastr.warning('This device does not report motion sensors.');
+    } else if (result === 'denied') {
+        toastr.error('Motion access was denied. Allow it in the browser site settings, then reload.');
+    }
+    onParallaxChanged();
+}
+
+/** Whether the notification has been offered during this page load. */
+let motionAccessPromptOffered = false;
+/** The notification itself, while it is on screen. */
+let motionAccessToast = null;
+
+/**
+ * Offers the sensor permission as a clickable notification, so the settings
+ * panel does not have to be opened first. The click is the user gesture the
+ * browser asks for before it shows its permission dialog.
+ *
+ * Offered once per page load, which is how long the permission lasts on
+ * iOS Safari anyway.
+ */
+function promptForMotionAccess() {
+    if (motionAccessPromptOffered) return;
+
+    const settings = getSettings();
+    const p = settings.fullscreen.parallax;
+    if (!settings.enabled || !p.enabled || resolveSource(p.source) !== 'motion') return;
+
+    const status = getParallaxStatus();
+    if (!status.needsPermission || status.permission === 'granted') return;
+
+    motionAccessPromptOffered = true;
+    motionAccessToast = toastr.info(
+        'Motion parallax needs access to the motion sensors. Click here to grant it.',
+        'Floating Expression',
+        {
+            timeOut: 15000,
+            extendedTimeOut: 15000,
+            closeButton: true,
+            onclick: () => void grantMotionAccessWithFeedback(),
+        },
+    );
 }
 
 function updateParallaxStatus() {
@@ -1711,6 +1779,7 @@ function onChatChanged() {
     }
 
     detectAndRenderFromLastMessage();
+    promptForMotionAccess();
 }
 
 // =============================================================
@@ -1758,6 +1827,11 @@ jQuery(async () => {
 
     // 8. Process existing chat
     detectAndRenderFromLastMessage();
+
+    // A chat restored on startup may have loaded before the events were bound.
+    if (getContext().chat?.length) {
+        promptForMotionAccess();
+    }
 
     console.log(`[${EXTENSION_NAME}] Extension loaded.`);
 });

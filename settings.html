@@ -231,9 +231,9 @@
                         <span>Motion parallax</span>
                     </label>
                     <small>
-                        Leans the sprite as the device is tilted, and follows the mouse pointer
-                        when there is no sensor to read. Mobile browsers only expose the sensors
-                        over HTTPS.
+                        Leans the sprite as the device is tilted, shifts it as the device is
+                        carried around, and follows the mouse pointer when there is no sensor
+                        to read. Mobile browsers only expose the sensors over HTTPS.
                     </small>
                     <div id="fe_parallax_status" class="fe-parallax-status">Off.</div>
                 </div>
@@ -282,22 +282,26 @@
                 <div class="fe-setting-group">
                     <label class="fe-range-header" for="fe_parallax_max_shift">
                         <span>Max Drift</span>
-                        <output id="fe_parallax_max_shift_value">4.0%</output>
+                        <output id="fe_parallax_max_shift_value">8.0%</output>
                     </label>
-                    <small>How far the sprite slides, as a percent of the viewport.</small>
-                    <input id="fe_parallax_max_shift" type="range" min="0" max="6" step="0.1" value="4" />
+                    <small>
+                        How far the sprite slides, as a percent of the viewport. The glide
+                        below is a share of this, so a longer slide shows the inertia more.
+                    </small>
+                    <input id="fe_parallax_max_shift" type="range" min="0" max="12" step="0.5" value="8" />
                 </div>
 
                 <div class="fe-setting-group">
                     <label class="fe-range-header" for="fe_parallax_glide">
                         <span>Glide</span>
-                        <output id="fe_parallax_glide_value">0.50</output>
+                        <output id="fe_parallax_glide_value">0.60</output>
                     </label>
                     <small>
-                        Inertia. The sprite carries on for a moment after the device stops,
-                        and settles back instead of stopping dead. Raise it for more weight.
+                        Inertia. The sprite gathers speed behind the device, carries on for a
+                        moment after it stops, and coasts a little past the target before it
+                        settles. Raise it for more weight.
                     </small>
-                    <input id="fe_parallax_glide" type="range" min="0" max="1" step="0.05" value="0.5" />
+                    <input id="fe_parallax_glide" type="range" min="0" max="1" step="0.05" value="0.6" />
                 </div>
 
                 <hr />
@@ -382,13 +386,14 @@
                     <div class="fe-setting-group">
                         <label class="fe-range-header" for="fe_parallax_zoom">
                             <span>Zoom Compensation</span>
-                            <output id="fe_parallax_zoom_value">1.200×</output>
+                            <output id="fe_parallax_zoom_value">1.350×</output>
                         </label>
                         <small>
                             Enlarges the sprite so sliding and leaning do not reveal empty edges.
-                            The default covers the slide; raise it if you push Intensity up.
+                            The default covers a full slide at Intensity 1, so raise it along
+                            with Max Drift and Intensity.
                         </small>
-                        <input id="fe_parallax_zoom" type="range" min="1" max="1.4" step="0.005" value="1.2" />
+                        <input id="fe_parallax_zoom" type="range" min="1" max="1.6" step="0.005" value="1.35" />
                     </div>
 
                     <div class="fe-setting-group">

@@ -12,7 +12,8 @@ A [SillyTavern](https://github.com/SillyTavern/SillyTavern) extension that detec
   - **Fullscreen** — Full-viewport background layer behind or above the chat
   - **Custom** — User-defined HTML template + CSS with `{{imageSrc}}` and `{{label}}` variables
 - **Manual Placement** — In fullscreen mode, pick the **Manual** image fit to set the sprite's scale, offset and rotation. Adjust it with the settings sliders or drag it directly on screen
-- **Motion Parallax** — In fullscreen mode, slides and tilts the sprite with the device's motion sensors, or with the mouse pointer when there is no sensor to read. The movement carries momentum, so the sprite glides on for a moment after the device stops, and eases back to centre once it is held still
+- **Motion Parallax** — In fullscreen mode, slides and tilts the sprite with the device's motion sensors, or with the mouse pointer when there is no sensor to read. Carrying the device to one side pushes the sprite the other way with the inertia of a hanging weight, and every movement glides on for a moment before it settles, before easing back to centre once the device is held still
+- **Sensor Permission Prompt** — Asks for the sensor permission through a clickable notification when a chat is opened, so the settings panel does not have to be opened first
 - **Sprite Resolution** — Automatically matches expression labels to character sprite images with exact and prefix-based fuzzy matching
 - **Crossfade Animation** — Smooth transitions between expression changes
 - **Click-to-Toggle Opacity** — Click the window to toggle between normal and reduced opacity
@@ -59,9 +60,10 @@ coasts on after the device stops, and settles instead of stopping dead.
 
 1. Set **Display Mode** to Fullscreen
 2. Tick **Motion parallax**
-3. On a phone, tap **Grant access** if the panel asks for it, then hold the
-   device the way you normally would and tap **Recenter** to set that pose as
-   the neutral one
+3. Grant the sensor access when the page asks for it. The extension offers it
+   as a clickable notification each time a chat is opened, and **Grant access**
+   in this panel does the same thing. Then hold the device the way you normally
+   would and tap **Recenter** to set that pose as the neutral one
 
 **Input source** — `Auto` uses the sensors on touch devices and the mouse
 pointer on desktop, where there is no gyroscope to read. The pointer source
@@ -71,9 +73,19 @@ the chat does not shake the sprite.
 **Requirements** — Browsers only expose the sensors in a secure context, so
 the page has to be served over HTTPS (or opened on `localhost`). SillyTavern
 can do this with `ssl.enabled` in `config.yaml`, or by running behind a
-reverse proxy. iOS Safari also asks for permission once per page load, which
-is what the **Grant access** button is for. The panel reports which of these
-is blocking the effect.
+reverse proxy. iOS Safari also asks for permission once per page load: the
+extension offers it as a clickable notification when a chat is opened, because
+the click is the gesture the browser wants before it shows its dialog. The
+**Grant access** button in the panel is there for a second try, and the panel
+reports which of these is blocking the effect.
+
+**Carrying the device** — The sprite hangs on the screen like a weight. Moving
+the phone to one side leaves the sprite behind, and it swings back once the
+phone stops. A gentle move is worth about half the slide, and a firm one
+reaches the whole of it. It works with the device held at any angle, lying flat
+on a table included, and it needs `Device motion`, the same permission the rest
+of the effect uses. The mouse has no such dimension: the pointer source maps
+its position, so the sprite simply goes where the cursor goes.
 
 **What the effect can and cannot do** — The sprite is a single flat image, so
 the effect moves and tilts that one image; it is not the part-by-part parallax
@@ -81,6 +93,8 @@ of a Live2D model. The accelerometer sees two degrees of freedom: leaning the
 device left and right, and tipping it forwards and backwards. A turn about the
 vertical axis is invisible to it, which is where **Gyroscope Inertia** comes
 in: it adds a short kick while the device is turning fast and decays back.
+Carrying the device across a plane is a third kind of motion, read from the
+linear acceleration rather than from gravity.
 
 **Recentring** — On by default. Once the posture has been steady for
 `Stillness Delay`, that posture becomes the new centre and the sprite eases
@@ -94,16 +108,19 @@ source; the pointer source maps the absolute mouse position, so it stays put.
 **Tuning** — `Intensity`, `Max Drift`, `Max Rotation` and `Glide` cover most
 of it. `Max Drift` is how far the image slides, as a percent of the viewport,
 and `Max Rotation` is how far it leans while it slides. `Glide` is the
-inertia: at 0 the sprite follows the device closely, and raising it makes the
-sprite coast further past the target and take longer to settle. Smaller values
-of `Smoothing` give a heavier sprite overall.
+inertia: the sprite gathers speed behind the device, carries on after it
+stops, and coasts a little past the target. The glide is a share of the slide,
+so a longer `Max Drift` is what makes it read on screen; at 8 percent the
+sprite is a little over halfway when the hand stops, and covers the rest in
+about a tenth of a second.
 
 The advanced block holds the saturation distance (`Full Effect At`), the
 `Dead Zone` around the neutral pose, `Smoothing`, the `Perspective` distance,
-`Zoom Compensation`, axis inversion and the swap. `Zoom Compensation` is the
-margin that keeps the slide from uncovering an edge: the default covers the
-slide at `Intensity` 1, so raise it if you push `Intensity` further. If the
-sprite leans the wrong way for the way you hold the device, the two invert
+`Zoom Compensation`, axis inversion and the swap. `Smoothing` sets how closely
+the sprite tracks the device: lower values trail further behind and therefore
+glide longer. `Zoom Compensation` is the margin that keeps the slide from
+uncovering an edge, and it has to grow with `Max Drift` and `Intensity`. If
+the sprite leans the wrong way for the way you hold the device, the two invert
 checkboxes fix that without any other change. The tilt fades out on its own
 while the device lies nearly flat, where the lean reading loses its
 direction. **Reset Parallax Settings** at the top of the panel puts every
