@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 
 // Load the REAL detection code out of index.js (it imports SillyTavern
 // modules, so it cannot be imported directly) and stub its dependencies.
-const src = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+// A Windows checkout hands the file back with CRLF, which the section
+// markers below would miss.
+const src = readFileSync(new URL('./index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const start = src.indexOf('//  Detection\n');
 const end = src.indexOf('//  Sprite Resolution');
 if (start < 0 || end < 0) throw new Error('section markers not found');
