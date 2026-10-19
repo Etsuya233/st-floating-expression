@@ -51,14 +51,14 @@
     color: var(--SmartThemeQuoteColor, #e0b64f);
 }
 
-/* ---------- Motion parallax settings ---------- */
-.floating-expression-settings .fe-parallax-status {
+/* ---------- Effect status lines ---------- */
+.floating-expression-settings .fe-status {
     margin: 4px 0 0;
     font-size: 0.85em;
     opacity: 0.75;
 }
 
-.floating-expression-settings .fe-parallax-status.fe-warn {
+.floating-expression-settings .fe-status.fe-warn {
     opacity: 1;
     color: var(--SmartThemeQuoteColor, #e0b64f);
 }

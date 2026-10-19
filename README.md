@@ -13,6 +13,7 @@ A [SillyTavern](https://github.com/SillyTavern/SillyTavern) extension that detec
   - **Custom** — User-defined HTML template + CSS with `{{imageSrc}}` and `{{label}}` variables
 - **Manual Placement** — In fullscreen mode, pick the **Manual** image fit to set the sprite's scale, offset and rotation. Adjust it with the settings sliders or drag it directly on screen
 - **Motion Parallax** — In fullscreen mode, slides and tilts the sprite with the device's motion sensors, or with the mouse pointer when there is no sensor to read. Carrying the device to one side pushes the sprite the other way with the inertia of a hanging weight, and every movement glides on for a moment before it settles, before easing back to centre once the device is held still
+- **Breathing** — An idle breath for the sprite, in Window and Fullscreen mode: a pace, a swell depth, a lift and how much each breath differs from the last
 - **Sensor Permission Prompt** — Asks for the sensor permission through a clickable notification when a chat is opened, so the settings panel does not have to be opened first
 - **Sprite Resolution** — Automatically matches expression labels to character sprite images with exact and prefix-based fuzzy matching
 - **Crossfade Animation** — Smooth transitions between expression changes
@@ -126,6 +127,36 @@ while the device lies nearly flat, where the lean reading loses its
 direction. **Reset Parallax Settings** at the top of the panel puts every
 parallax value back to its default after a confirmation.
 
+### Breathing
+
+A slow idle motion, available in both Window and Fullscreen mode: the sprite
+swells as it takes a breath, lifts a little on the way in, and settles back.
+Nothing about it follows the chat, so it keeps moving while the model is quiet.
+
+1. Tick **Breathing**
+2. Set **Pace** (breaths per minute — 12 is a calm resting rate), **Depth** (how
+   much the sprite swells, as a percent of its size) and **Rise** (how far it
+   lifts, as a percent of its height)
+
+**The shape of a breath** — breathing in takes less of the cycle than breathing
+out, and the curve flattens as it reaches each end, so the sprite dwells at the
+top and at the bottom of a breath instead of turning on the spot. The swell only
+ever grows the sprite: shrinking it below the size it was given would open a gap
+along the edge in fullscreen, where the image is scaled to cover the viewport.
+
+**Variation** — at 0 every breath is identical and the rhythm is metronomic.
+Raise it and each breath runs a little longer or shorter than the last while the
+swell wanders slowly between deep and shallow, so the motion never falls into an
+exact loop. The defaults are gentle on purpose: an idle breath reads as alive
+while it is barely noticeable.
+
+**When it runs** — only while a sprite is actually on screen, so nothing is
+animated behind a hidden sprite. It pauses while the on-screen placement editor
+is open, since the editor measures the sprite as you placed it, and it does not
+apply in Custom HTML mode, where the sprite image is replaced by your own
+template. Like the motion parallax, the system's reduce-motion preference holds
+it back; the checkbox below the sliders is there if you want it anyway.
+
 ### Hiding Expression Tags
 
 To hide expression tags from the displayed message:
@@ -151,10 +182,11 @@ the whitespace around the label is ignored.
 
 ## Tests
 
-Detection has a dependency-free regression suite:
+Detection and the breathing engine have dependency-free regression suites:
 
 ```
 node test-detection.mjs
+node test-breathing.mjs
 ```
 
 ## Requirements
