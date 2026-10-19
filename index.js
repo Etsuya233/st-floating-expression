@@ -9,6 +9,16 @@
 import { eventSource, event_types, getRequestHeaders, saveSettingsDebounced } from '../../../../script.js';
 import { getContext, extension_settings } from '../../../extensions.js';
 import { getCharaFilename } from '../../../utils.js';
+import { Popup } from '../../../popup.js';
+import {
+    getParallaxStatus,
+    getParallaxTilt,
+    recenterParallax,
+    requestMotionAccess,
+    resolveSource,
+    startParallax,
+    stopParallax,
+} from './parallax.js';
 
 // ── Constants ────────────────────────────────────────────────
 const EXTENSION_NAME = 'st-floating-expression';
@@ -54,6 +64,25 @@ const DEFAULT_SETTINGS = {
             y: 0,
             rotation: 0,
         },
+        // Tilts the sprite with the device's motion sensors, or with the
+        // mouse pointer when there is no sensor to read.
+        parallax: {
+            enabled: false,
+            source: 'auto',            // 'auto' | 'motion' | 'pointer'
+            intensity: 1,              // scales every tilt, 0 disables the motion
+            maxAngle: 8,               // degrees of rotation at full tilt
+            maxShift: 1.2,             // viewport percent of drift at full tilt
+            inputRange: 20,            // device tilt that reaches full tilt
+            deadzone: 1,               // device tilt ignored around the neutral pose
+            smoothing: 0.12,           // easing per frame, lower is slower
+            perspective: 1200,         // pixels, larger is flatter
+            zoomCompensation: 1.04,    // scale, hides the gaps opened by tilting
+            inertia: 0,                // gyroscope kick while the device is turning
+            invertX: false,
+            invertY: false,
+            swapAxes: false,
+            ignoreReducedMotion: false,
+        },
     },
 
     // Custom mode
@@ -87,6 +116,8 @@ const ADJUST_SPRITE_Z_INDEX = 100;
 const ADJUST_FRAME_ID = 'fe-adjust-frame';
 const ADJUST_TOOLBAR_ID = 'fe-adjust-toolbar';
 const ADJUST_HANDLES = ['nw', 'ne', 'sw', 'se'];
+
+const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
 // ── State ────────────────────────────────────────────────────
 /** @type {Map<string, {label: string, path: string}[]>} */
 const spriteCache = new Map();
@@ -170,6 +201,7 @@ function loadSettingsUI() {
     $('#fe_fs_opacity').val(s.fullscreen.opacity);
     $('#fe_fs_z_index').val(s.fullscreen.zIndex);
     syncTransformControls();
+    syncParallaxControls();
 
     // Custom
     $('#fe_custom_html').val(s.customHtml);
@@ -383,6 +415,99 @@ function bindSettingsListeners() {
         }
     });
 
+    // ── Motion parallax (fullscreen) ──
+    $('#fe_parallax_enabled').on('change', async function () {
+        getSettings().fullscreen.parallax.enabled = !!$(this).prop('checked');
+        saveSettings();
+        if (getSettings().fullscreen.parallax.enabled) {
+            // Must run before any await to keep the user gesture alive.
+            const granted = grantMotionAccessIfNeeded();
+            if (granted) await granted;
+        }
+        onParallaxChanged();
+    });
+
+    $('#fe_parallax_source').on('change', async function () {
+        getSettings().fullscreen.parallax.source = String($(this).val());
+        saveSettings();
+        // The source decides which listeners are attached, so restart.
+        stopParallax();
+        const granted = grantMotionAccessIfNeeded();
+        if (granted) await granted;
+        onParallaxChanged();
+    });
+
+    for (const [selector, key, parse] of [
+        ['#fe_parallax_intensity', 'intensity', parseFloat],
+        ['#fe_parallax_max_angle', 'maxAngle', parseFloat],
+        ['#fe_parallax_max_shift', 'maxShift', parseFloat],
+        ['#fe_parallax_input_range', 'inputRange', parseFloat],
+        ['#fe_parallax_deadzone', 'deadzone', parseFloat],
+        ['#fe_parallax_smoothing', 'smoothing', parseFloat],
+        ['#fe_parallax_perspective', 'perspective', parseFloat],
+        ['#fe_parallax_zoom', 'zoomCompensation', parseFloat],
+        ['#fe_parallax_inertia', 'inertia', parseFloat],
+    ]) {
+        $(selector).on('input', function () {
+            const value = parse($(this).val());
+            if (!Number.isFinite(value)) return;
+            getSettings().fullscreen.parallax[key] = value;
+            saveSettings();
+            onParallaxChanged();
+        });
+    }
+
+    for (const [selector, key] of [
+        ['#fe_parallax_invert_x', 'invertX'],
+        ['#fe_parallax_invert_y', 'invertY'],
+        ['#fe_parallax_swap_axes', 'swapAxes'],
+        ['#fe_parallax_ignore_reduced_motion', 'ignoreReducedMotion'],
+    ]) {
+        $(selector).on('change', function () {
+            getSettings().fullscreen.parallax[key] = !!$(this).prop('checked');
+            saveSettings();
+            onParallaxChanged();
+        });
+    }
+
+    $('#fe_parallax_grant').on('click', async function () {
+        const result = await grantMotionAccessIfNeeded(true);
+        if (result === 'granted') {
+            toastr.success('Motion access granted.');
+        } else if (result === 'insecure') {
+            toastr.warning('Motion sensors need HTTPS or localhost.');
+        } else if (result === 'unsupported') {
+            toastr.warning('This device does not report motion sensors.');
+        } else if (result === 'denied') {
+            toastr.error('Motion access was denied. Allow it in the browser site settings, then reload.');
+        }
+        onParallaxChanged();
+    });
+
+    $('#fe_parallax_recenter').on('click', function () {
+        recenterParallax();
+        toastr.info('Neutral pose updated.');
+    });
+
+    $('#fe_parallax_reset').on('click', async function () {
+        const confirmed = await Popup.show.confirm(
+            'Reset parallax settings?',
+            'The fullscreen motion parallax settings go back to their defaults. Everything else stays as it is.');
+        if (!confirmed) return;
+
+        // The sampler reads the settings object directly, so restoring the
+        // values in place is enough. The source may have changed, which needs
+        // the listeners rebuilt.
+        Object.assign(getSettings().fullscreen.parallax, DEFAULT_SETTINGS.fullscreen.parallax);
+        saveSettings();
+        stopParallax();
+        syncParallaxControls();
+        onParallaxChanged();
+        toastr.success('Parallax settings restored to defaults.');
+    });
+
+    reducedMotionMedia.addEventListener('change', onParallaxChanged);
+
     // ── Custom settings ──
     $('#fe_custom_html').on('input', function () {
         getSettings().customHtml = String($(this).val());
@@ -395,6 +520,175 @@ function bindSettingsListeners() {
         applyCustomCSS();
         saveSettings();
     });
+}
+
+// =============================================================
+//  Motion Parallax (fullscreen only)
+// =============================================================
+
+/** Last status line rendered, so the per-frame update can skip the DOM. */
+let lastParallaxStatusKey = '';
+
+/** Push the saved parallax values into the panel controls. */
+function syncParallaxControls() {
+    const p = getSettings().fullscreen.parallax;
+    $('#fe_parallax_enabled').prop('checked', p.enabled);
+    $('#fe_parallax_source').val(p.source);
+    $('#fe_parallax_intensity').val(p.intensity);
+    $('#fe_parallax_max_angle').val(p.maxAngle);
+    $('#fe_parallax_max_shift').val(p.maxShift);
+    $('#fe_parallax_input_range').val(p.inputRange);
+    $('#fe_parallax_deadzone').val(p.deadzone);
+    $('#fe_parallax_smoothing').val(p.smoothing);
+    $('#fe_parallax_perspective').val(p.perspective);
+    $('#fe_parallax_zoom').val(p.zoomCompensation);
+    $('#fe_parallax_inertia').val(p.inertia);
+    $('#fe_parallax_invert_x').prop('checked', p.invertX);
+    $('#fe_parallax_invert_y').prop('checked', p.invertY);
+    $('#fe_parallax_swap_axes').prop('checked', p.swapAxes);
+    $('#fe_parallax_ignore_reduced_motion').prop('checked', p.ignoreReducedMotion);
+    updateParallaxLabels();
+    updateParallaxStatus();
+}
+
+function updateParallaxLabels() {
+    const p = getSettings().fullscreen.parallax;
+    $('#fe_parallax_intensity_value').text(`${p.intensity.toFixed(2)}×`);
+    $('#fe_parallax_max_angle_value').text(`${p.maxAngle.toFixed(1)}°`);
+    $('#fe_parallax_max_shift_value').text(`${p.maxShift.toFixed(1)}%`);
+    $('#fe_parallax_input_range_value').text(`${Math.round(p.inputRange)}°`);
+    $('#fe_parallax_deadzone_value').text(`${p.deadzone.toFixed(1)}°`);
+    $('#fe_parallax_smoothing_value').text(p.smoothing.toFixed(2));
+    $('#fe_parallax_perspective_value').text(`${Math.round(p.perspective)}px`);
+    $('#fe_parallax_zoom_value').text(`${p.zoomCompensation.toFixed(3)}×`);
+    $('#fe_parallax_inertia_value').text(p.inertia.toFixed(2));
+}
+
+/** True when the parallax setting is on and nothing blocks it. */
+function parallaxAllowed() {
+    const s = getSettings();
+    const p = s.fullscreen.parallax;
+    if (!s.enabled || s.displayMode !== 'fullscreen' || !p.enabled) return false;
+    if (reducedMotionMedia.matches && !p.ignoreReducedMotion) return false;
+    return true;
+}
+
+/**
+ * The extra scale that keeps the tilted sprite covering the viewport.
+ * Held back while the manual editor is open, since the editor measures
+ * the untransformed box.
+ */
+function spriteZoom() {
+    if (!parallaxAllowed() || $(`#${ADJUST_FRAME_ID}`).length) return 1;
+    return getSettings().fullscreen.parallax.zoomCompensation;
+}
+
+/** True when the sampler has something to move. */
+function shouldRunParallax() {
+    if (!parallaxAllowed()) return false;
+    if ($(`#${ADJUST_FRAME_ID}`).length) return false;
+
+    const holder = $('#floating-expression-holder');
+    if (!holder.length || holder.hasClass('fe-hidden')) return false;
+    return !!holder.find('img.fe-sprite').not('.fe-sprite-leaving').attr('src');
+}
+
+/** Starts or stops the sampler so it matches the current settings. */
+function syncParallax() {
+    const wanted = shouldRunParallax();
+    const running = getParallaxStatus().running;
+
+    if (wanted && !running) {
+        startParallax({
+            params: () => getSettings().fullscreen.parallax,
+            source: getSettings().fullscreen.parallax.source,
+            onFrame: onParallaxFrame,
+        });
+    } else if (!wanted && running) {
+        stopParallax();
+    }
+
+    updateParallaxStatus();
+}
+
+/** Per-frame hook: move the sprite, and keep the panel status honest. */
+function onParallaxFrame() {
+    applySpriteTransform();
+    updateParallaxStatus();
+}
+
+function onParallaxChanged() {
+    updateParallaxLabels();
+    syncParallax();
+    applyFullscreenStyles();
+}
+
+/**
+ * Requests sensor access when the motion source is selected. Called from
+ * user gestures only, since browsers require one for the permission prompt.
+ * @param {boolean} force Ask even when the current state looks settled
+ * @returns {Promise<string>|null}
+ */
+function grantMotionAccessIfNeeded(force = false) {
+    const p = getSettings().fullscreen.parallax;
+    if (!force && (!p.enabled || resolveSource(p.source) !== 'motion')) return null;
+
+    const status = getParallaxStatus();
+    if (!status.needsPermission || status.permission === 'granted') return null;
+
+    return requestMotionAccess();
+}
+
+function updateParallaxStatus() {
+    const $status = $('#fe_parallax_status');
+    if (!$status.length) return;
+
+    const p = getSettings().fullscreen.parallax;
+    const status = getParallaxStatus();
+    const wantsMotion = resolveSource(p.source) === 'motion';
+    const showGrant = p.enabled && wantsMotion
+        && status.needsPermission && status.permission !== 'granted';
+    const showRecenter = status.running && status.source === 'motion';
+    let text = 'Off.';
+    let warning = false;
+
+    if (p.enabled) {
+        if (!wantsMotion) {
+            text = status.running ? 'Active — following the mouse pointer.' : 'Waiting for fullscreen mode with a sprite on screen.';
+        } else if (!status.supported) {
+            text = 'This device does not report motion sensors.';
+            warning = true;
+        } else if (!status.secure) {
+            text = 'Motion sensors need a secure context (HTTPS or localhost).';
+            warning = true;
+        } else if (status.permission === 'denied') {
+            text = 'Motion access denied. Allow it in the browser site settings, then reload.';
+            warning = true;
+        } else if (showGrant) {
+            text = 'Motion access has not been granted for this page yet.';
+            warning = true;
+        } else if (!status.running) {
+            text = status.reducedMotion && !p.ignoreReducedMotion
+                ? 'Paused — your system asks for reduced motion.'
+                : 'Waiting for fullscreen mode with a sprite on screen.';
+        } else if (!status.hasSensorData) {
+            text = 'Active — waiting for sensor readings.';
+        } else if (status.flatPose) {
+            text = 'Active — the device is lying almost flat, hold it upright.';
+        } else {
+            text = 'Active — following the device orientation.';
+        }
+    }
+
+    // Runs once per animation frame while the sampler is live, so keep the
+    // DOM untouched unless something actually changed.
+    const key = `${text}|${warning}|${showGrant}|${showRecenter}`;
+    if (key === lastParallaxStatusKey) return;
+    lastParallaxStatusKey = key;
+
+    $status.text(text).toggleClass('fe-warn', warning);
+    $('#fe_parallax_grant').toggle(showGrant);
+    $('#fe_parallax_recenter').toggle(showRecenter);
 }
 
 // =============================================================
@@ -638,6 +932,8 @@ function applyDisplayMode() {
         holder.removeClass('dragged');
         applyDefaultPosition();
     }
+
+    syncParallax();
 }
 
 /** Apply window mode inline styles from settings */
@@ -687,14 +983,56 @@ function applyFullscreenStyles() {
 
     // Manual fit starts from a full-image (contain) base and then applies the
     // user transform on top, so the editor can compute the frame from that box.
-    holder.find('img.fe-sprite')
-        .css('object-fit', manual ? 'contain' : fs.objectFit)
-        .css('transform', manual ? buildTransform(fs.transform) : '');
+    holder.find('img.fe-sprite').css('object-fit', manual ? 'contain' : fs.objectFit);
+    applySpriteTransform();
 }
 
-/** @param {{scale: number, x: number, y: number, rotation: number}} t */
-function buildTransform(t) {
-    return `translate(${t.x}vw, ${t.y}vh) rotate(${t.rotation}deg) scale(${t.scale})`;
+/**
+ * Writes the sprite transform: the manual placement, plus the live
+ * parallax tilt when the sampler is running.
+ *
+ * The perspective lives inside the transform list on purpose. SillyTavern
+ * puts a transform on <html>, and a transformed ancestor flattens any
+ * perspective declared on a parent element.
+ */
+function applySpriteTransform() {
+    const holder = $('#floating-expression-holder');
+    if (!holder.length) return;
+
+    const fs = getSettings().fullscreen;
+    const p = fs.parallax;
+    const t = fs.transform;
+    const manual = fs.objectFit === 'manual';
+    const tilt = getParallaxTilt();
+    const parts = [];
+
+    if (tilt) {
+        parts.push(`perspective(${p.perspective}px)`);
+    }
+
+    if (manual) {
+        parts.push(`translate(${t.x}vw, ${t.y}vh) rotate(${t.rotation}deg)`);
+    }
+
+    const scale = (manual ? t.scale : 1) * spriteZoom();
+    if (manual || scale !== 1) {
+        parts.push(`scale(${scale.toFixed(4)})`);
+    }
+
+    if (tilt) {
+        // The sprite leans with the device while drifting the other way,
+        // which is what reads as looking at it from a slightly different
+        // spot. Axis swap and inversion are user-facing tuning.
+        let x = tilt.x * (p.invertX ? -1 : 1);
+        let y = tilt.y * (p.invertY ? -1 : 1);
+        if (p.swapAxes) {
+            [x, y] = [y, x];
+        }
+        parts.push(`translate3d(${(-x * p.maxShift).toFixed(3)}vw, ${(-y * p.maxShift).toFixed(3)}vh, 0)`);
+        parts.push(`rotateX(${(y * p.maxAngle).toFixed(3)}deg) rotateY(${(x * p.maxAngle).toFixed(3)}deg)`);
+    }
+
+    holder.find('img.fe-sprite').css('transform', parts.join(' '));
 }
 
 /** Set a sensible default position for windowed modes */
@@ -822,10 +1160,12 @@ function initClickToggle($holder) {
 
 function showHolder() {
     $('#floating-expression-holder').removeClass('fe-hidden');
+    syncParallax();
 }
 
 function hideHolder() {
     $('#floating-expression-holder').addClass('fe-hidden');
+    syncParallax();
 }
 
 /**
@@ -860,6 +1200,7 @@ function setSprite(imageSrc) {
     img.attr('src', imageSrc);
     img.attr('alt', currentExpression || '');
     currentImageSrc = imageSrc;
+    syncParallax();
 }
 
 /**
@@ -970,6 +1311,10 @@ function startAdjusting() {
     $('body').append(frame);
     bindAdjustFrame(frame);
 
+    // The editor measures the transform the sprite would have without the
+    // parallax, so park the sampler until the session is over.
+    syncParallax();
+
     // Own toolbar, pinned above everything: the settings panel can end up
     // underneath the sprite while adjusting, which would hide its buttons.
     const toolbar = $(`
@@ -1005,6 +1350,8 @@ function stopAdjusting() {
     if (getSettings().displayMode === 'fullscreen') {
         applyFullscreenStyles();
     }
+
+    syncParallax();
 
     $('#fe_fs_adjust_toggle').removeClass('fe-active');
     $('#fe_fs_adjust_toggle span').text('Adjust on screen');

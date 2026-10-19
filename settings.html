@@ -24,6 +24,14 @@
                 <span>Copy Regex for Hiding Tags</span>
             </div>
 
+            <div class="fe-setting-group">
+                <div id="fe_parallax_reset" class="menu_button menu_button_icon" style="width: 100%;">
+                    <i class="fa-solid fa-arrow-rotate-left"></i>
+                    <span>Reset Parallax Settings</span>
+                </div>
+                <small>Puts the fullscreen motion parallax back to its default values.</small>
+            </div>
+
             <hr />
 
             <!-- ═══ Detection ═══ -->
@@ -213,6 +221,151 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- ─── Motion Parallax ─── -->
+                <hr />
+
+                <div class="fe-setting-group">
+                    <label class="checkbox_label" for="fe_parallax_enabled">
+                        <input id="fe_parallax_enabled" type="checkbox" />
+                        <span>Motion parallax</span>
+                    </label>
+                    <small>
+                        Leans the sprite as the device is tilted, and follows the mouse pointer
+                        when there is no sensor to read. Mobile browsers only expose the sensors
+                        over HTTPS.
+                    </small>
+                    <div id="fe_parallax_status" class="fe-parallax-status">Off.</div>
+                </div>
+
+                <div class="fe-parallax-actions fe-inline-row">
+                    <div>
+                        <div id="fe_parallax_grant" class="menu_button menu_button_icon" style="width: 100%;">
+                            <i class="fa-solid fa-mobile-screen-button"></i>
+                            <span>Grant access</span>
+                        </div>
+                    </div>
+                    <div>
+                        <div id="fe_parallax_recenter" class="menu_button menu_button_icon" style="width: 100%;">
+                            <i class="fa-solid fa-crosshairs"></i>
+                            <span>Recenter</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fe-setting-group">
+                    <label for="fe_parallax_source">Input Source</label>
+                    <select id="fe_parallax_source" class="flex1 margin0">
+                        <option value="auto">Auto (sensor on touch devices, pointer on desktop)</option>
+                        <option value="motion">Device motion sensor</option>
+                        <option value="pointer">Mouse pointer</option>
+                    </select>
+                </div>
+
+                <div class="fe-setting-group">
+                    <label class="fe-range-header" for="fe_parallax_intensity">
+                        <span>Intensity</span>
+                        <output id="fe_parallax_intensity_value">1.00×</output>
+                    </label>
+                    <input id="fe_parallax_intensity" type="range" min="0" max="2" step="0.05" value="1" />
+                </div>
+
+                <div class="fe-setting-group">
+                    <label class="fe-range-header" for="fe_parallax_max_angle">
+                        <span>Max Rotation</span>
+                        <output id="fe_parallax_max_angle_value">8.0°</output>
+                    </label>
+                    <input id="fe_parallax_max_angle" type="range" min="0" max="25" step="0.5" value="8" />
+                </div>
+
+                <div class="fe-setting-group">
+                    <label class="fe-range-header" for="fe_parallax_max_shift">
+                        <span>Max Drift</span>
+                        <output id="fe_parallax_max_shift_value">1.2%</output>
+                    </label>
+                    <input id="fe_parallax_max_shift" type="range" min="0" max="6" step="0.1" value="1.2" />
+                </div>
+
+                <details class="fe-advanced">
+                    <summary>Advanced tuning</summary>
+
+                    <div class="fe-setting-group">
+                        <label class="fe-range-header" for="fe_parallax_input_range">
+                            <span>Full Effect At</span>
+                            <output id="fe_parallax_input_range_value">20°</output>
+                        </label>
+                        <small>Device tilt, from the neutral pose, that reaches full effect.</small>
+                        <input id="fe_parallax_input_range" type="range" min="5" max="45" step="1" value="20" />
+                    </div>
+
+                    <div class="fe-setting-group">
+                        <label class="fe-range-header" for="fe_parallax_deadzone">
+                            <span>Dead Zone</span>
+                            <output id="fe_parallax_deadzone_value">1.0°</output>
+                        </label>
+                        <small>Tilt ignored around the neutral pose, which hides hand shake.</small>
+                        <input id="fe_parallax_deadzone" type="range" min="0" max="8" step="0.5" value="1" />
+                    </div>
+
+                    <div class="fe-setting-group">
+                        <label class="fe-range-header" for="fe_parallax_smoothing">
+                            <span>Smoothing</span>
+                            <output id="fe_parallax_smoothing_value">0.12</output>
+                        </label>
+                        <small>Easing per frame. Lower is calmer, higher is snappier.</small>
+                        <input id="fe_parallax_smoothing" type="range" min="0.02" max="0.6" step="0.01" value="0.12" />
+                    </div>
+
+                    <div class="fe-setting-group">
+                        <label class="fe-range-header" for="fe_parallax_perspective">
+                            <span>Perspective</span>
+                            <output id="fe_parallax_perspective_value">1200px</output>
+                        </label>
+                        <small>Distance to the virtual camera. Larger is flatter.</small>
+                        <input id="fe_parallax_perspective" type="range" min="400" max="4000" step="50" value="1200" />
+                    </div>
+
+                    <div class="fe-setting-group">
+                        <label class="fe-range-header" for="fe_parallax_zoom">
+                            <span>Zoom Compensation</span>
+                            <output id="fe_parallax_zoom_value">1.040×</output>
+                        </label>
+                        <small>Enlarges the sprite so the tilt does not reveal empty edges.</small>
+                        <input id="fe_parallax_zoom" type="range" min="1" max="1.3" step="0.005" value="1.04" />
+                    </div>
+
+                    <div class="fe-setting-group">
+                        <label class="fe-range-header" for="fe_parallax_inertia">
+                            <span>Gyroscope Inertia</span>
+                            <output id="fe_parallax_inertia_value">0.00</output>
+                        </label>
+                        <small>
+                            Adds a kick while the device is turning fast. The accelerometer alone
+                            cannot see a turn about the vertical axis.
+                        </small>
+                        <input id="fe_parallax_inertia" type="range" min="0" max="1" step="0.05" value="0" />
+                    </div>
+
+                    <label class="checkbox_label" for="fe_parallax_invert_x">
+                        <input id="fe_parallax_invert_x" type="checkbox" />
+                        <span>Invert horizontal tilt</span>
+                    </label>
+
+                    <label class="checkbox_label" for="fe_parallax_invert_y">
+                        <input id="fe_parallax_invert_y" type="checkbox" />
+                        <span>Invert vertical tilt</span>
+                    </label>
+
+                    <label class="checkbox_label" for="fe_parallax_swap_axes">
+                        <input id="fe_parallax_swap_axes" type="checkbox" />
+                        <span>Swap axes</span>
+                    </label>
+
+                    <label class="checkbox_label" for="fe_parallax_ignore_reduced_motion">
+                        <input id="fe_parallax_ignore_reduced_motion" type="checkbox" />
+                        <span>Run even when the system asks for reduced motion</span>
+                    </label>
+                </details>
 
                 <div class="fe-setting-group">
                     <label for="fe_fs_opacity">Opacity</label>

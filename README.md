@@ -12,6 +12,7 @@ A [SillyTavern](https://github.com/SillyTavern/SillyTavern) extension that detec
   - **Fullscreen** — Full-viewport background layer behind or above the chat
   - **Custom** — User-defined HTML template + CSS with `{{imageSrc}}` and `{{label}}` variables
 - **Manual Placement** — In fullscreen mode, pick the **Manual** image fit to set the sprite's scale, offset and rotation. Adjust it with the settings sliders or drag it directly on screen
+- **Motion Parallax** — In fullscreen mode, tilts the sprite with the device's motion sensors, or with the mouse pointer when there is no sensor to read
 - **Sprite Resolution** — Automatically matches expression labels to character sprite images with exact and prefix-based fuzzy matching
 - **Crossfade Animation** — Smooth transitions between expression changes
 - **Click-to-Toggle Opacity** — Click the window to toggle between normal and reduced opacity
@@ -46,6 +47,46 @@ A [SillyTavern](https://github.com/SillyTavern/SillyTavern) extension that detec
    - drag a corner handle to scale it
    - drag the round handle above the frame to rotate it
 3. Click **Done** or press **Esc** to finish. SillyTavern's side panels are hidden while adjusting and come back afterwards.
+
+### Motion Parallax (Fullscreen)
+
+The sprite can lean and drift a little as you move, which reads as a shallow
+3D effect on top of the flat sprite image.
+
+1. Set **Display Mode** to Fullscreen
+2. Tick **Motion parallax**
+3. On a phone, tap **Grant access** if the panel asks for it, then hold the
+   device the way you normally would and tap **Recenter** to set that pose as
+   the neutral one
+
+**Input source** — `Auto` uses the sensors on touch devices and the mouse
+pointer on desktop, where there is no gyroscope to read. The pointer source
+follows the mouse across the viewport and ignores touch input, so scrolling
+the chat does not shake the sprite.
+
+**Requirements** — Browsers only expose the sensors in a secure context, so
+the page has to be served over HTTPS (or opened on `localhost`). SillyTavern
+can do this with `ssl.enabled` in `config.yaml`, or by running behind a
+reverse proxy. iOS Safari also asks for permission once per page load, which
+is what the **Grant access** button is for. The panel reports which of these
+is blocking the effect.
+
+**What the effect can and cannot do** — The sprite is a single flat image, so
+the effect is a perspective tilt of that image, not the part-by-part parallax
+of a Live2D model. The accelerometer sees two degrees of freedom: leaning the
+device left and right, and tipping it forwards and backwards. A turn about the
+vertical axis is invisible to it, which is where **Gyroscope Inertia** comes
+in: it adds a short kick while the device is turning fast and decays back.
+
+**Tuning** — `Intensity`, `Max Rotation` and `Max Drift` cover most of it.
+The advanced block holds the saturation distance (`Full Effect At`), the
+`Dead Zone` around the neutral pose, `Smoothing`, the `Perspective` distance,
+`Zoom Compensation` (which hides the edges the tilt would otherwise open),
+axis inversion and the swap. If the sprite leans the wrong way for the way you
+hold the device, the two invert checkboxes fix that without any other change.
+The tilt fades out on its own while the device lies nearly flat, where the
+lean reading loses its direction. **Reset Parallax Settings** at the top of the
+panel puts every parallax value back to its default after a confirmation.
 
 ### Hiding Expression Tags
 

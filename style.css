@@ -51,6 +51,39 @@
     color: var(--SmartThemeQuoteColor, #e0b64f);
 }
 
+/* ---------- Motion parallax settings ---------- */
+.floating-expression-settings .fe-parallax-status {
+    margin: 4px 0 0;
+    font-size: 0.85em;
+    opacity: 0.75;
+}
+
+.floating-expression-settings .fe-parallax-status.fe-warn {
+    opacity: 1;
+    color: var(--SmartThemeQuoteColor, #e0b64f);
+}
+
+.floating-expression-settings .fe-parallax-actions {
+    margin: 6px 0;
+}
+
+.floating-expression-settings .fe-advanced {
+    margin: 8px 0;
+    padding: 0 8px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+    border-radius: 6px;
+}
+
+.floating-expression-settings .fe-advanced > summary {
+    padding: 6px 0;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.floating-expression-settings .fe-advanced[open] > summary {
+    margin-bottom: 4px;
+}
+
 /* ---------- Floating container (shared) ---------- */
 #floating-expression-holder {
     position: fixed;
